@@ -1,0 +1,2 @@
+export { AlbumsPage } from "./AlbumsPage"
+
