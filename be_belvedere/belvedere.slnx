@@ -1,0 +1,13 @@
+<Solution>
+  <Folder Name="/SolutionItems/">
+    <File Path=".github/workflows/build_on_push.yml" />
+    <File Path="Directory.Build.props" />
+    <File Path="ManageMigration.ps1" />
+  </Folder>
+  <Project Path="belvedere.Core/belvedere.Core.csproj" />
+  <Project Path="belvedere.Persistence/belvedere.Persistence.csproj" />
+  <Project Path="belvedere.Shared/belvedere.Shared.csproj" />
+  <Project Path="belvedere.Test/belvedere.Test.csproj" />
+  <Project Path="belvedere.TestInt/belvedere.TestInt.csproj" />
+  <Project Path="belvedere/belvedere.csproj" />
+</Solution>
