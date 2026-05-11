@@ -1,4 +1,5 @@
-﻿using belvedere.Core.Services;
+﻿using belvedere.Controllers.DTOs;
+using belvedere.Core.Services;
 using belvedere.Core.Util;
 using belvedere.Persistence.Model;
 using belvedere.Persistence.Util;
@@ -26,7 +27,6 @@ public sealed class ShareController(
     IPhotoService photoService,
     IAlbumService albumService,
     IShareService shareService,
-    IStorageService storageService,
     IOptions<Settings> settings,
     ILogger<ShareController> logger) : BaseController
 {
@@ -82,52 +82,57 @@ public sealed class ShareController(
             await transaction.BeginTransactionAsync();
 
             ShareKey shareKey;
-            string targetType = request.TargetType.Trim().ToLowerInvariant();
-            if (targetType == "photo")
+            var targetType = request.TargetType;
+            switch (targetType)
             {
-                OneOf<Photo, NotFound> photoResult = await photoService.GetPhotoByIdAsync(request.TargetId);
-                if (photoResult.IsT1)
+                case ResourceType.Photo:
                 {
+                    OneOf<Photo, NotFound> photoResult = await photoService.GetPhotoByIdAsync(request.TargetId);
+                    if (photoResult.IsT1)
+                    {
+                        await transaction.RollbackAsync();
+
+                        return NotFound();
+                    }
+
+                    var photo = photoResult.AsT0;
+                    if (photo.UserId != currentUser.Id)
+                    {
+                        await transaction.RollbackAsync();
+
+                        return NotFound();
+                    }
+
+                    shareKey = await shareService.CreateShareAsync(null, photo.Id, request.Password, request.ExpiresAt);
+
+                    break;
+                }
+                case ResourceType.Album:
+                {
+                    OneOf<Album, NotFound> albumResult = await albumService.GetAlbumByIdAsync(request.TargetId);
+                    if (albumResult.IsT1)
+                    {
+                        await transaction.RollbackAsync();
+
+                        return NotFound();
+                    }
+
+                    var album = albumResult.AsT0;
+                    if (album.UserId != currentUser.Id)
+                    {
+                        await transaction.RollbackAsync();
+
+                        return NotFound();
+                    }
+
+                    shareKey = await shareService.CreateShareAsync(album.Id, null, request.Password, request.ExpiresAt);
+
+                    break;
+                }
+                default:
                     await transaction.RollbackAsync();
 
-                    return NotFound();
-                }
-
-                var photo = photoResult.AsT0;
-                if (photo.UserId != currentUser.Id)
-                {
-                    await transaction.RollbackAsync();
-
-                    return NotFound();
-                }
-
-                shareKey = await shareService.CreateShareAsync(null, photo.Id, request.Password, request.ExpiresAt);
-            }
-            else if (targetType == "album")
-            {
-                OneOf<Album, NotFound> albumResult = await albumService.GetAlbumByIdAsync(request.TargetId);
-                if (albumResult.IsT1)
-                {
-                    await transaction.RollbackAsync();
-
-                    return NotFound();
-                }
-
-                var album = albumResult.AsT0;
-                if (album.UserId != currentUser.Id)
-                {
-                    await transaction.RollbackAsync();
-
-                    return NotFound();
-                }
-
-                shareKey = await shareService.CreateShareAsync(album.Id, null, request.Password, request.ExpiresAt);
-            }
-            else
-            {
-                await transaction.RollbackAsync();
-
-                return BadRequest(new { error = "TargetType must be either 'photo' or 'album'" });
+                    return BadRequest(new { error = "TargetType must be either 'photo' or 'album'" });
             }
 
             await transaction.CommitAsync();
@@ -148,83 +153,59 @@ public sealed class ShareController(
     }
 
     /// <summary>
-    ///     Retrieves shared content (photo or album) using a share key and optional password.
+    ///     Resolves a share key to its target resource identifier and type.
     /// </summary>
     /// <param name="key">The unique share key identifying the shared resource.</param>
     /// <param name="password">Optional password for password-protected shares.</param>
     /// <returns>
-    ///     A <see cref="SharedResourceResponse" /> containing either the shared photo or album with presigned URLs
-    ///     for accessing the actual content from S3 storage.
+    ///     A <see cref="ShareResolutionResponse" /> containing the target type and target ID.
     /// </returns>
     /// <remarks>
     ///     This endpoint is public and does not require authentication.
     ///     If the share is password-protected, the correct password must be provided in the query string.
-    ///     Returned URLs for photos are valid for 5 minutes.
     ///     If the share has an expiration date and that date has passed, an HTTP 410 Gone status is returned.
     /// </remarks>
-    /// <response code="200">The shared resource was retrieved successfully.</response>
+    /// <response code="200">The shared resource was resolved successfully.</response>
     /// <response code="401">The share is password-protected and the password is incorrect or missing.</response>
     /// <response code="404">The share key does not exist.</response>
     /// <response code="410">The share link has expired.</response>
     [HttpGet]
     [Route("{key}")]
-    [ProducesResponseType<SharedResourceResponse>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ShareResolutionResponse>(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status410Gone)]
-    public async ValueTask<ActionResult<SharedResourceResponse>> GetShareByKey(
+    public async ValueTask<ActionResult<ShareResolutionResponse>> GetShareByKey(
         [FromRoute] string key, [FromQuery] string? password = null)
     {
         OneOf<ShareKey, NotFound, IShareService.ShareUnauthorized, IShareService.Expired> resolution
             = await shareService.ResolveShareAsync(key, password);
 
-        return await resolution.Match<ValueTask<ActionResult<SharedResourceResponse>>>(async shareKey =>
+        return resolution.Match<ActionResult<ShareResolutionResponse>>(shareKey =>
          {
              if (shareKey.PhotoId is not null)
              {
-                 OneOf<Photo, NotFound> photoResult = await photoService.GetPhotoByIdAsync(shareKey.PhotoId.Value);
-                 if (photoResult.IsT1)
+                 return Ok(new ShareResolutionResponse
                  {
-                     return NotFound();
-                 }
-
-                 var photo = photoResult.AsT0;
-                 string temporaryUrl
-                     = await storageService.GetPresignedUrlAsync(photo.StorageKey, TimeSpan.FromMinutes(5));
-
-                 return Ok(new SharedResourceResponse("photo",
-                                                      new SharedPhotoResponse(photo.Id, photo.Title ?? "", temporaryUrl), //TODO fix title
-                                                      null));
+                     TargetType = ResourceType.Photo,
+                     TargetId = shareKey.PhotoId.Value
+                 });
              }
 
              if (shareKey.AlbumId is not null)
              {
-                 var album = await uow.AlbumRepository.GetAlbumByIdWithPhotosAsync(shareKey.AlbumId.Value);
-                 if (album is null)
+                 return Ok(new ShareResolutionResponse
                  {
-                     return NotFound();
-                 }
-
-                 var photos = new List<SharedPhotoResponse>();
-                 foreach (var photo in album.Photos.OrderBy(p => p.CreatedAt))
-                 {
-                     string temporaryUrl
-                         = await storageService.GetPresignedUrlAsync(photo.StorageKey, TimeSpan.FromMinutes(5));
-                     photos.Add(new SharedPhotoResponse(photo.Id, photo.Title ?? "", temporaryUrl)); //TODO fix title
-                 }
-
-                 return Ok(new SharedResourceResponse("album",
-                                                      null,
-                                                      new SharedAlbumResponse(album.Id, album.Title,
-                                                                              album.Description, photos)));
+                     TargetType = ResourceType.Album,
+                     TargetId = shareKey.AlbumId.Value
+                 });
              }
 
              return NotFound();
          },
-         notFound => ValueTask.FromResult<ActionResult<SharedResourceResponse>>(NotFound()),
-         unauthorized => ValueTask.FromResult<ActionResult<SharedResourceResponse>>(Unauthorized()),
-         expired =>
-             ValueTask.FromResult<ActionResult<SharedResourceResponse>>(StatusCode(StatusCodes.Status410Gone)));
+         notFound => NotFound(),
+         unauthorized => Unauthorized(),
+         expired => StatusCode(StatusCodes.Status410Gone));
     }
 
     /// <summary>
@@ -251,36 +232,8 @@ public sealed class ShareController(
 ///     Used by the CreateShare endpoint to specify what resource to share, with optional password protection
 ///     and expiration constraints.
 /// </remarks>
-public sealed class CreateShareRequest(string targetType, Guid targetId, string? password, DateTime? expiresAt)
+public sealed record CreateShareRequest(ResourceType TargetType, Guid TargetId, string? Password, DateTime? ExpiresAt)
 {
-    /// <summary>
-    ///     Gets the type of resource being shared ("photo" or "album").
-    /// </summary>
-    public string TargetType { get; } = targetType;
-
-    /// <summary>
-    ///     Gets the unique identifier of the resource being shared.
-    /// </summary>
-    public Guid TargetId { get; } = targetId;
-
-    /// <summary>
-    ///     Gets the optional password to protect the share link.
-    /// </summary>
-    /// <remarks>
-    ///     If provided, users accessing the share must provide this password.
-    ///     Maximum length is 256 characters.
-    /// </remarks>
-    public string? Password { get; } = password;
-
-    /// <summary>
-    ///     Gets the optional expiration date and time for the share link.
-    /// </summary>
-    /// <remarks>
-    ///     If provided, the share link becomes invalid after this date/time.
-    ///     Must be in the future relative to the current UTC time.
-    /// </remarks>
-    public DateTime? ExpiresAt { get; } = expiresAt;
-
     /// <summary>
     ///     Validator for the CreateShareRequest model using FluentValidation.
     /// </summary>
@@ -297,9 +250,9 @@ public sealed class CreateShareRequest(string targetType, Guid targetId, string?
         {
             RuleFor(x => x.TargetType)
                 .NotEmpty()
-                .Must(value => value.Equals("photo", StringComparison.OrdinalIgnoreCase) ||
-                               value.Equals("album", StringComparison.OrdinalIgnoreCase))
-                .WithMessage("TargetType must be either 'photo' or 'album'");
+                .Must(value => value == ResourceType.Photo ||
+                               value == ResourceType.Album)
+                                                    .WithMessage("TargetType must be either 'photo' or 'album'");
 
             RuleFor(x => x.TargetId)
                 .NotEmpty();
@@ -345,102 +298,4 @@ public sealed class CreateShareResponse(string shareKey, string shareUrl, DateTi
     ///     After this time, the share link becomes inaccessible and returns HTTP 410 Gone.
     /// </remarks>
     public DateTime? ExpiresAt { get; } = expiresAt;
-}
-
-/// <summary>
-///     Response model for retrieving a shared resource (photo or album).
-/// </summary>
-/// <remarks>
-///     Contains either a shared photo or a shared album with all necessary information
-///     including presigned URLs for accessing the actual content.
-/// </remarks>
-public sealed class SharedResourceResponse(string targetType, SharedPhotoResponse? photo, SharedAlbumResponse? album)
-{
-    /// <summary>
-    ///     Gets the type of shared resource ("photo" or "album").
-    /// </summary>
-    public string TargetType { get; } = targetType;
-
-    /// <summary>
-    ///     Gets the shared photo details if this is a photo share.
-    /// </summary>
-    /// <remarks>
-    ///     This is non-null only when TargetType is "photo".
-    /// </remarks>
-    public SharedPhotoResponse? Photo { get; } = photo;
-
-    /// <summary>
-    ///     Gets the shared album details if this is an album share.
-    /// </summary>
-    /// <remarks>
-    ///     This is non-null only when TargetType is "album".
-    ///     Includes all photos in the album with their presigned URLs.
-    /// </remarks>
-    public SharedAlbumResponse? Album { get; } = album;
-}
-
-/// <summary>
-///     Response model containing details about a shared photo.
-/// </summary>
-/// <remarks>
-///     Includes the photo's metadata and a temporary presigned URL for accessing the image from storage.
-/// </remarks>
-public sealed class SharedPhotoResponse(Guid id, string title, string temporaryUrl)
-{
-    /// <summary>
-    ///     Gets the unique identifier of the photo.
-    /// </summary>
-    public Guid Id { get; } = id;
-
-    /// <summary>
-    ///     Gets the title or name of the photo.
-    /// </summary>
-    public string Title { get; } = title;
-
-    /// <summary>
-    ///     Gets the temporary presigned URL for accessing the photo from S3 storage.
-    /// </summary>
-    /// <remarks>
-    ///     This URL is valid for 5 minutes. After expiration, a new share request must be made
-    ///     to obtain a new presigned URL.
-    /// </remarks>
-    public string TemporaryUrl { get; } = temporaryUrl;
-}
-
-/// <summary>
-///     Response model containing details about a shared album and its photos.
-/// </summary>
-/// <remarks>
-///     Includes the album's metadata and a collection of all photos in the album,
-///     each with their own presigned URLs for viewing.
-/// </remarks>
-public sealed class SharedAlbumResponse(
-    Guid id,
-    string title,
-    string? description,
-    IReadOnlyList<SharedPhotoResponse> photos)
-{
-    /// <summary>
-    ///     Gets the unique identifier of the album.
-    /// </summary>
-    public Guid Id { get; } = id;
-
-    /// <summary>
-    ///     Gets the title or name of the album.
-    /// </summary>
-    public string Title { get; } = title;
-
-    /// <summary>
-    ///     Gets the optional description or notes about the album.
-    /// </summary>
-    public string? Description { get; } = description;
-
-    /// <summary>
-    ///     Gets the collection of photos contained in this album.
-    /// </summary>
-    /// <remarks>
-    ///     Photos are ordered by creation date in ascending order.
-    ///     Each photo includes a temporary presigned URL valid for 5 minutes.
-    /// </remarks>
-    public IReadOnlyList<SharedPhotoResponse> Photos { get; } = photos;
 }
