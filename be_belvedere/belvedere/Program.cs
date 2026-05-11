@@ -29,7 +29,7 @@ builder.Services.AddAuthentication(options =>
            options.ClientSecret = GetRequiredConfigurationValue(builder.Configuration, "Keycloak:ClientSecret");
            options.RequireHttpsMetadata = builder.Configuration.GetValue("Keycloak:RequireHttpsMetadata", false);
            options.ResponseType = "code"; // Enforces the Standard Flow
-           options.SaveTokens = true;     // Tells the BFF to hold onto the access/refresh tokens in the session
+           options.SaveTokens = true; // Tells the BFF to hold onto the access/refresh tokens in the session
        });
 
 var app = builder.Build();
@@ -42,6 +42,10 @@ app.MapControllers();
 if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
+    app.UseSwaggerUI(options =>
+    {
+        options.SwaggerEndpoint("/openapi/v1.json", "OpenAPI V1");
+    });
 }
 
 await app.RunAsync();
@@ -53,9 +57,8 @@ static void ConfigureJsonSerialization(JsonOptions options, bool isDev)
     JsonConfig.ConfigureJsonSerialization(options.JsonSerializerOptions, isDev);
 }
 
-
-static string GetRequiredConfigurationValue(IConfiguration configuration, string key)
-    => configuration[key] ?? throw new InvalidOperationException($"Missing required configuration value: {key}");
+static string GetRequiredConfigurationValue(IConfiguration configuration, string key) =>
+    configuration[key] ?? throw new InvalidOperationException($"Missing required configuration value: {key}");
 
 // used for integration testing
 public partial class Program { }

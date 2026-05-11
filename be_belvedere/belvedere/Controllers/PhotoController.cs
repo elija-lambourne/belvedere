@@ -4,11 +4,13 @@ using belvedere.Persistence.Model;
 using belvedere.Persistence.Util;
 using belvedere.Util;
 using Microsoft.AspNetCore.Mvc;
+using OneOf;
+using OneOf.Types;
 
 namespace belvedere.Controllers;
 
 /// <summary>
-/// API controller for managing photo access and retrieving presigned URLs.
+///     API controller for managing photo access and retrieving presigned URLs.
 /// </summary>
 [Route("api/photos")]
 public sealed class PhotoController(
@@ -19,17 +21,17 @@ public sealed class PhotoController(
     ILogger<PhotoController> logger) : BaseController
 {
     /// <summary>
-    /// Retrieves a temporary presigned URL for accessing a specific photo.
+    ///     Retrieves a temporary presigned URL for accessing a specific photo.
     /// </summary>
     /// <param name="id">The GUID identifier of the photo to retrieve a presigned URL for.</param>
     /// <param name="shareKey">Optional share key for access to non-public photos.</param>
     /// <param name="sharePassword">Optional password if the share key is password-protected.</param>
     /// <returns>
-    /// A <see cref="PhotoSignedUrlResponse"/> containing a temporary presigned URL that expires in 5 minutes.
+    ///     A <see cref="PhotoSignedUrlResponse" /> containing a temporary presigned URL that expires in 5 minutes.
     /// </returns>
     /// <remarks>
-    /// The user must either own the photo, the photo must be in a public album, or accessed via a valid share key.
-    /// The returned URL is valid for 5 minutes.
+    ///     The user must either own the photo, the photo must be in a public album, or accessed via a valid share key.
+    ///     The returned URL is valid for 5 minutes.
     /// </remarks>
     /// <response code="200">Returns the presigned URL successfully.</response>
     /// <response code="400">The photo ID is empty (Guid.Empty).</response>
@@ -51,7 +53,7 @@ public sealed class PhotoController(
             return BadRequest();
         }
 
-        var photoResult = await photoService.GetPhotoByIdAsync(id);
+        OneOf<Photo, NotFound> photoResult = await photoService.GetPhotoByIdAsync(id);
 
         return await photoResult.Match<ValueTask<ActionResult<PhotoSignedUrlResponse>>>(async photo =>
         {
@@ -72,17 +74,17 @@ public sealed class PhotoController(
     }
 
     /// <summary>
-    /// Retrieves the expanded metadata of a specific photo.
+    ///     Retrieves the expanded metadata of a specific photo.
     /// </summary>
     /// <param name="id">The GUID identifier of the photo to retrieve metadata for.</param>
     /// <param name="shareKey">Optional share key for access to non-public photos.</param>
     /// <param name="sharePassword">Optional password if the share key is password-protected.</param>
     /// <returns>
-    /// A <see cref="PhotoMetaDataDto"/> containing all metadata of the photo.
+    ///     A <see cref="PhotoMetaDataDto" /> containing all metadata of the photo.
     /// </returns>
     /// <remarks>
-    /// This endpoint returns comprehensive metadata about a photo including EXIF data, location, dimensions, etc.
-    /// The user must either own the photo or the photo must be in a public album or accessed via a valid share key.
+    ///     This endpoint returns comprehensive metadata about a photo including EXIF data, location, dimensions, etc.
+    ///     The user must either own the photo or the photo must be in a public album or accessed via a valid share key.
     /// </remarks>
     /// <response code="200">Returns the photo metadata successfully.</response>
     /// <response code="400">The photo ID is empty (Guid.Empty).</response>
@@ -104,7 +106,7 @@ public sealed class PhotoController(
             return BadRequest();
         }
 
-        var photoResult = await photoService.GetPhotoByIdAsync(id);
+        OneOf<Photo, NotFound> photoResult = await photoService.GetPhotoByIdAsync(id);
 
         return await photoResult.Match<ValueTask<ActionResult<PhotoMetaDataDto>>>(async photo =>
         {
@@ -115,14 +117,14 @@ public sealed class PhotoController(
                 return Unauthorized();
             }
 
-            return Ok(this.MapPhotoToMetadata(photo));
+            return Ok(MapPhotoToMetadata(photo));
         }, _ => ValueTask.FromResult<ActionResult<PhotoMetaDataDto>>(NotFound()));
     }
 
     /// <summary>
-    /// Maps a Photo model to a PhotoMetadataResponse DTO.
+    ///     Maps a Photo model to a PhotoMetadataResponse DTO.
     /// </summary>
-    private PhotoMetaDataDto MapPhotoToMetadata(belvedere.Persistence.Model.Photo photo)
+    private PhotoMetaDataDto MapPhotoToMetadata(Photo photo)
     {
         return new PhotoMetaDataDto
         {
@@ -151,12 +153,12 @@ public sealed class PhotoController(
     }
 
     /// <summary>
-    /// Checks whether the user has access to the specified photo.
+    ///     Checks whether the user has access to the specified photo.
     /// </summary>
-    private async ValueTask<bool> HasPhotoAccessAsync(belvedere.Persistence.Model.Photo photo, string? shareKey,
+    private async ValueTask<bool> HasPhotoAccessAsync(Photo photo, string? shareKey,
                                                       string? sharePassword)
     {
-        var isAuthenticated = User.Identity?.IsAuthenticated == true;
+        bool isAuthenticated = User.Identity?.IsAuthenticated == true;
         if (isAuthenticated)
         {
             string? externalSub = User.FindFirst("sub")?.Value;
@@ -176,17 +178,23 @@ public sealed class PhotoController(
             return true;
         }
 
-        if (!string.IsNullOrWhiteSpace(shareKey))
+        if (string.IsNullOrWhiteSpace(shareKey))
         {
-            var resolution = await shareService.ResolveShareAsync(shareKey, sharePassword);
+            return false;
+        }
+
+        {
+            OneOf<ShareKey, NotFound, IShareService.ShareUnauthorized, IShareService.Expired> resolution
+                = await shareService.ResolveShareAsync(shareKey, sharePassword);
 
             return
-                resolution.Match(validKey => validKey.PhotoId == photo.Id || (validKey.AlbumId is not null && photoWithAlbums?.Albums.Any(a => a.Id == validKey.AlbumId) == true),
+                resolution.Match(validKey => validKey.PhotoId == photo.Id || (validKey.AlbumId is not null &&
+                                                                              photoWithAlbums?.Albums.Any(a => a.Id ==
+                                                                                       validKey.AlbumId) == true),
                                  _ => false,
                                  _ => false,
                                  _ => false);
         }
 
-        return false;
     }
 }

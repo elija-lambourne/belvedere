@@ -3,6 +3,7 @@
     <File Path=".github/workflows/build_on_push.yml" />
     <File Path="Directory.Build.props" />
     <File Path="ManageMigration.ps1" />
+    <File Path="ManageMigration.sh" />
   </Folder>
   <Project Path="belvedere.Core/belvedere.Core.csproj" />
   <Project Path="belvedere.Persistence/belvedere.Persistence.csproj" />

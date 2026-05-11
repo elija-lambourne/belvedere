@@ -4,15 +4,17 @@ using belvedere.Persistence.Model;
 using belvedere.Persistence.Util;
 using belvedere.Util;
 using Microsoft.AspNetCore.Mvc;
+using OneOf;
+using OneOf.Types;
 
 namespace belvedere.Controllers;
 
 /// <summary>
-/// API controller for managing albums and their photos.
+///     API controller for managing albums and their photos.
 /// </summary>
 /// <remarks>
-/// Provides endpoints for authenticated users to manage albums and organize photos.
-/// Public albums can be viewed by anyone without authentication.
+///     Provides endpoints for authenticated users to manage albums and organize photos.
+///     Public albums can be viewed by anyone without authentication.
 /// </remarks>
 [Route("api/albums")]
 public sealed class AlbumController(
@@ -24,7 +26,7 @@ public sealed class AlbumController(
     ILogger<AlbumController> logger) : BaseController
 {
     /// <summary>
-    /// Retrieves all albums for the authenticated user.
+    ///     Retrieves all albums for the authenticated user.
     /// </summary>
     /// <returns>A list of albums owned by the current user.</returns>
     /// <response code="200">Returns the list of albums successfully.</response>
@@ -51,7 +53,7 @@ public sealed class AlbumController(
             return Unauthorized();
         }
 
-        var albums = await albumService.GetAlbumsForUserAsync(currentUser.Id);
+        IReadOnlyList<Album> albums = await albumService.GetAlbumsForUserAsync(currentUser.Id);
         var response = albums.Select(a => new AlbumDto
         {
             Id = a.Id,
@@ -67,7 +69,7 @@ public sealed class AlbumController(
     }
 
     /// <summary>
-    /// Retrieves a specific album with all its photos.
+    ///     Retrieves a specific album with all its photos.
     /// </summary>
     /// <param name="id">The unique identifier of the album.</param>
     /// <param name="shareKey">Optional share key for access to non-public albums.</param>
@@ -126,7 +128,7 @@ public sealed class AlbumController(
     }
 
     /// <summary>
-    /// Retrieves a specific album with all its photo thumbnails.
+    ///     Retrieves a specific album with all its photo thumbnails.
     /// </summary>
     /// <param name="id">The unique identifier of the album.</param>
     /// <param name="shareKey">Optional share key for access to non-public albums.</param>
@@ -198,9 +200,9 @@ public sealed class AlbumController(
 
         return Ok(response);
     }
-    
+
     /// <summary>
-    /// Creates a new album for the authenticated user.
+    ///     Creates a new album for the authenticated user.
     /// </summary>
     /// <param name="request">The album creation request.</param>
     /// <returns>The created album.</returns>
@@ -260,7 +262,7 @@ public sealed class AlbumController(
     }
 
     /// <summary>
-    /// Deletes an album (owner only).
+    ///     Deletes an album (owner only).
     /// </summary>
     /// <param name="id">The unique identifier of the album to delete.</param>
     /// <returns>No content on success.</returns>
@@ -300,32 +302,34 @@ public sealed class AlbumController(
         await transactionProvider.BeginTransactionAsync();
         try
         {
-            var result = await albumService.DeleteAlbumAsync(id, currentUser.Id);
+            OneOf<None, NotFound, Unauthorized> result = await albumService.DeleteAlbumAsync(id, currentUser.Id);
 
             if (result.IsT0)
             {
                 await transactionProvider.CommitAsync();
+
                 return NoContent();
             }
-            else if (result.IsT1)
+
+            if (result.IsT1)
             {
                 return NotFound();
             }
-            else
-            {
-                logger.LogWarning("User {UserId} unauthorized to delete album {AlbumId}", currentUser.Id, id);
-                return Forbid();
-            }
+
+            logger.LogWarning("User {UserId} unauthorized to delete album {AlbumId}", currentUser.Id, id);
+
+            return Forbid();
         }
         catch
         {
             await transactionProvider.RollbackAsync();
+
             throw;
         }
     }
 
     /// <summary>
-    /// Adds a photo to an album (owner only).
+    ///     Adds a photo to an album (owner only).
     /// </summary>
     /// <param name="albumId">The unique identifier of the album.</param>
     /// <param name="photoId">The unique identifier of the photo to add.</param>
@@ -366,32 +370,35 @@ public sealed class AlbumController(
         await transactionProvider.BeginTransactionAsync();
         try
         {
-            var result = await albumService.AddPhotoToAlbumAsync(albumId, photoId, currentUser.Id);
+            OneOf<None, NotFound, Unauthorized> result
+                = await albumService.AddPhotoToAlbumAsync(albumId, photoId, currentUser.Id);
 
             if (result.IsT0)
             {
                 await transactionProvider.CommitAsync();
+
                 return NoContent();
             }
-            else if (result.IsT1)
+
+            if (result.IsT1)
             {
                 return NotFound();
             }
-            else
-            {
-                logger.LogWarning("User {UserId} unauthorized to add photo to album {AlbumId}", currentUser.Id, albumId);
-                return Forbid();
-            }
+
+            logger.LogWarning("User {UserId} unauthorized to add photo to album {AlbumId}", currentUser.Id, albumId);
+
+            return Forbid();
         }
         catch
         {
             await transactionProvider.RollbackAsync();
+
             throw;
         }
     }
 
     /// <summary>
-    /// Removes a photo from an album (owner only).
+    ///     Removes a photo from an album (owner only).
     /// </summary>
     /// <param name="albumId">The unique identifier of the album.</param>
     /// <param name="photoId">The unique identifier of the photo to remove.</param>
@@ -432,32 +439,36 @@ public sealed class AlbumController(
         await transactionProvider.BeginTransactionAsync();
         try
         {
-            var result = await albumService.RemovePhotoFromAlbumAsync(albumId, photoId, currentUser.Id);
+            OneOf<None, NotFound, Unauthorized> result
+                = await albumService.RemovePhotoFromAlbumAsync(albumId, photoId, currentUser.Id);
 
             if (result.IsT0)
             {
                 await transactionProvider.CommitAsync();
+
                 return NoContent();
             }
-            else if (result.IsT1)
+
+            if (result.IsT1)
             {
                 return NotFound();
             }
-            else
-            {
-                logger.LogWarning("User {UserId} unauthorized to remove photo from album {AlbumId}", currentUser.Id, albumId);
-                return Forbid();
-            }
+
+            logger.LogWarning("User {UserId} unauthorized to remove photo from album {AlbumId}", currentUser.Id,
+                              albumId);
+
+            return Forbid();
         }
         catch
         {
             await transactionProvider.RollbackAsync();
+
             throw;
         }
     }
 
     /// <summary>
-    /// Gets the current authenticated user from the claims.
+    ///     Gets the current authenticated user from the claims.
     /// </summary>
     private async ValueTask<User?> GetCurrentUserAsync()
     {
@@ -471,11 +482,11 @@ public sealed class AlbumController(
     }
 
     /// <summary>
-    /// Checks whether the user has access to the specified album.
+    ///     Checks whether the user has access to the specified album.
     /// </summary>
     private async ValueTask<bool> HasAlbumAccessAsync(Album album, string? shareKey, string? sharePassword)
     {
-        var isAuthenticated = User.Identity?.IsAuthenticated == true;
+        bool isAuthenticated = User.Identity?.IsAuthenticated == true;
         var currentUser = isAuthenticated ? await GetCurrentUserAsync() : null;
         if (currentUser?.Id == album.UserId || album.IsPublic)
         {
@@ -484,13 +495,13 @@ public sealed class AlbumController(
 
         if (!string.IsNullOrWhiteSpace(shareKey))
         {
-            var resolution = await shareService.ResolveShareAsync(shareKey, sharePassword);
-            return resolution.Match(
-                validKey => validKey.AlbumId == album.Id,
-                _ => false,
-                _ => false,
-                _ => false
-            );
+            OneOf<ShareKey, NotFound, IShareService.ShareUnauthorized, IShareService.Expired> resolution
+                = await shareService.ResolveShareAsync(shareKey, sharePassword);
+
+            return resolution.Match(validKey => validKey.AlbumId == album.Id,
+                                    _ => false,
+                                    _ => false,
+                                    _ => false);
         }
 
         return false;
