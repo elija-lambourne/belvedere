@@ -15,7 +15,7 @@ public static class Setup
                                            bool isDev)
         {
             services.ConfigurePersistence(configurationManager, isDev);
-            services.ConfigureCore();
+            services.ConfigureCore(configurationManager);
         }
 
         public Settings LoadAndConfigureSettings(IConfigurationManager configurationManager)

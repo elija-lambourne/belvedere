@@ -7,7 +7,8 @@ public sealed class Photo
     public Guid Id { get; set; }
     public Guid UserId { get; set; }
     [MaxLength(255)]
-    public required string Title { get; set; }
+    public string? Title { get; set; }
+    public required string FileName { get; init; }
     [MaxLength(2000)]
     public string? Description { get; set; }
     [MaxLength(1024)]

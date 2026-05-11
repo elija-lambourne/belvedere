@@ -27,7 +27,7 @@ internal sealed class UnitOfWork(DatabaseContext context, ILogger<UnitOfWork> lo
     private IDbContextTransaction? _transaction;
     
     public IPhotoRepository PhotoRepository => new PhotoRepository(context.Photos);
-    public IAlbumRepository AlbumRepository => new AlbumRepository(context.Albums);
+    public IAlbumRepository AlbumRepository => new AlbumRepository(context.Albums, context.Photos);
     public IUserRepository UserRepository => new UserRepository(context.Users);
     public IShareKeyRepository ShareKeyRepository => new ShareKeyRepository(context.ShareKeys);
 
