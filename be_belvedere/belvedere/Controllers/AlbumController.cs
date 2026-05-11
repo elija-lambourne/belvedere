@@ -77,7 +77,7 @@ public sealed class AlbumController(
     /// <returns>The album with all its photos.</returns>
     /// <response code="200">Returns the album and its photos successfully.</response>
     /// <response code="404">The album does not exist or the user does not have access to it.</response>
-    [HttpGet("/preload/{id:guid}")]
+    [HttpGet("{id:guid}/preload")]
     [ProducesResponseType<AlbumExtendedDto>(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async ValueTask<ActionResult<AlbumExtendedDto>> PreloadAlbum(
