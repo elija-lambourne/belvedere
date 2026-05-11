@@ -13,15 +13,43 @@ builder.AddLogging();
 builder.Services.AddApplicationServices(configurationManager, isDev);
 builder.Services.AddOpenApi();
 builder.Services.AddCors(settings);
-builder.Services.AddControllers(o => { o.ModelBinderProviders.Insert(0, new NodaTimeModelBinderProvider()); })
+builder.Services.AddControllers(o => 
+       { 
+           o.ModelBinderProviders.Insert(0, new NodaTimeModelBinderProvider()); 
+           // Globally require CSRF tokens for all state-changing requests (POST, PUT, DELETE, PATCH)
+           o.Filters.Add(new Microsoft.AspNetCore.Mvc.AutoValidateAntiforgeryTokenAttribute());
+       })
        .AddJsonOptions(o => ConfigureJsonSerialization(o, isDev));
 builder.Services.ConfigureAdditionalRouteConstraints();
+
+builder.Services.AddAntiforgery(options =>
+{
+    // Industry standard header name for CSRF tokens (works natively with Axios)
+    options.HeaderName = "X-XSRF-TOKEN";
+    // We enforce SameSite=Strict for BFF to prevent CSRF.
+    options.Cookie.SameSite = Microsoft.AspNetCore.Http.SameSiteMode.Strict;
+    options.Cookie.SecurePolicy = CookieSecurePolicy.Always;
+});
+
 builder.Services.AddAuthentication(options =>
        {
            options.DefaultScheme = "Cookies";
            options.DefaultChallengeScheme = "oidc";
        })
-       .AddCookie("Cookies")
+       .AddCookie("Cookies", options =>
+       {
+           options.Cookie.Name = "__Host-belvedere-session";
+           options.Cookie.SameSite = Microsoft.AspNetCore.Http.SameSiteMode.Strict;
+           options.Cookie.HttpOnly = true;
+           options.Cookie.SecurePolicy = CookieSecurePolicy.Always;
+           // If running locally without HTTPS, this __Host- prefix will fail to set unless we are on secure localhost.
+           // Removing the prefix to be safe for dev without HTTPS, but keeping secure defaults.
+           if (isDev)
+           {
+               options.Cookie.Name = "belvedere-session";
+               options.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest;
+           }
+       })
        .AddOpenIdConnect("oidc", options =>
        {
            options.Authority = GetRequiredConfigurationValue(builder.Configuration, "Keycloak:Authority");
@@ -30,6 +58,14 @@ builder.Services.AddAuthentication(options =>
            options.RequireHttpsMetadata = builder.Configuration.GetValue("Keycloak:RequireHttpsMetadata", false);
            options.ResponseType = "code"; // Enforces the Standard Flow
            options.SaveTokens = true; // Tells the BFF to hold onto the access/refresh tokens in the session
+           options.GetClaimsFromUserInfoEndpoint = true;
+           
+           // Ensure the redirect URI is correct
+           options.Events.OnRedirectToIdentityProvider = context =>
+           {
+               // Keycloak standard requires this to ensure we don't accidentally send cookies over HTTP when proxying
+               return Task.CompletedTask;
+           };
        });
 
 var app = builder.Build();
@@ -38,6 +74,11 @@ var app = builder.Build();
 
 app.UseCors(Setup.CorsPolicyName);
 app.UseMiddleware<ExceptionHandlingMiddleware>();
+
+app.UseAuthentication();
+app.UseAuthorization();
+app.UseAntiforgery();
+
 app.MapControllers();
 if (app.Environment.IsDevelopment())
 {
