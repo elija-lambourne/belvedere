@@ -8,74 +8,58 @@ using Microsoft.AspNetCore.Mvc;
 namespace belvedere.Controllers;
 
 /// <summary>
-/// API controller for managing photo access and retrieving presigned URLs for authenticated users.
+/// API controller for managing photo access and retrieving presigned URLs.
 /// </summary>
-/// <remarks>
-/// Provides endpoints for users to obtain temporary signed URLs for accessing their photos stored in S3 storage.
-/// All endpoints require authentication via the "sub" claim in the user's identity.
-/// </remarks>
 [Route("api/photos")]
 public sealed class PhotoController(
     IUnitOfWork uow,
     IPhotoService photoService,
     IStorageService storageService,
+    IShareService shareService,
     ILogger<PhotoController> logger) : BaseController
 {
     /// <summary>
     /// Retrieves a temporary presigned URL for accessing a specific photo.
     /// </summary>
     /// <param name="id">The GUID identifier of the photo to retrieve a presigned URL for.</param>
+    /// <param name="shareKey">Optional share key for access to non-public photos.</param>
+    /// <param name="sharePassword">Optional password if the share key is password-protected.</param>
     /// <returns>
     /// A <see cref="PhotoSignedUrlResponse"/> containing a temporary presigned URL that expires in 5 minutes.
     /// </returns>
     /// <remarks>
-    /// This endpoint requires user authentication. The user can only retrieve signed URLs for photos they own.
+    /// The user must either own the photo, the photo must be in a public album, or accessed via a valid share key.
     /// The returned URL is valid for 5 minutes.
     /// </remarks>
     /// <response code="200">Returns the presigned URL successfully.</response>
     /// <response code="400">The photo ID is empty (Guid.Empty).</response>
-    /// <response code="401">User is not authenticated or external sub claim is missing.</response>
     /// <response code="404">The photo does not exist or the user does not have access to it.</response>
+    /// <response code="401">The user is not authenticated.</response>
     [HttpGet]
     [Route("{id:guid}/signed-url")]
     [ProducesResponseType<PhotoSignedUrlResponse>(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
-    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public async ValueTask<ActionResult<PhotoSignedUrlResponse>> GetSignedUrl([FromRoute] Guid id)
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    public async ValueTask<ActionResult<PhotoSignedUrlResponse>> GetSignedUrl(
+        [FromRoute] Guid id,
+        [FromQuery] string? shareKey = null,
+        [FromQuery] string? sharePassword = null)
     {
         if (id == Guid.Empty)
         {
             return BadRequest();
         }
 
-        if (User.Identity?.IsAuthenticated != true)
-        {
-            return Unauthorized();
-        }
-
-        string? externalSub = User.FindFirst("sub")?.Value;
-        if (string.IsNullOrWhiteSpace(externalSub))
-        {
-            return Unauthorized();
-        }
-
-        var currentUser = await uow.UserRepository.GetUserByExternalSubAsync(externalSub);
-        if (currentUser is null)
-        {
-            return Unauthorized();
-        }
-
         var photoResult = await photoService.GetPhotoByIdAsync(id);
 
         return await photoResult.Match<ValueTask<ActionResult<PhotoSignedUrlResponse>>>(async photo =>
         {
-            if (photo.UserId != currentUser.Id)
+            if (!await HasPhotoAccessAsync(photo, shareKey, sharePassword))
             {
-                logger.LogInformation("User {UserId} tried to access photo {PhotoId} without access", currentUser.Id,
-                                      id);
+                logger.LogInformation("User tried to access photo {PhotoId} without access", id);
 
-                return NotFound();
+                return Unauthorized();
             }
 
             string temporaryUrl = await storageService.GetPresignedUrlAsync(photo.StorageKey, TimeSpan.FromMinutes(5));
@@ -87,14 +71,14 @@ public sealed class PhotoController(
         }, _ => ValueTask.FromResult<ActionResult<PhotoSignedUrlResponse>>(NotFound()));
     }
 
-    
-    
     /// <summary>
     /// Retrieves the expanded metadata of a specific photo.
     /// </summary>
     /// <param name="id">The GUID identifier of the photo to retrieve metadata for.</param>
+    /// <param name="shareKey">Optional share key for access to non-public photos.</param>
+    /// <param name="sharePassword">Optional password if the share key is password-protected.</param>
     /// <returns>
-    /// A <see cref="PhotoExtendedDto"/> containing all metadata of the photo.
+    /// A <see cref="PhotoMetaDataDto"/> containing all metadata of the photo.
     /// </returns>
     /// <remarks>
     /// This endpoint returns comprehensive metadata about a photo including EXIF data, location, dimensions, etc.
@@ -102,13 +86,18 @@ public sealed class PhotoController(
     /// </remarks>
     /// <response code="200">Returns the photo metadata successfully.</response>
     /// <response code="400">The photo ID is empty (Guid.Empty).</response>
+    /// <response code="401">The user is not authenticated.</response>
     /// <response code="404">The photo does not exist or the user does not have access to it.</response>
     [HttpGet]
     [Route("{id:guid}")]
     [ProducesResponseType<PhotoMetaDataDto>(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public async ValueTask<ActionResult<PhotoMetaDataDto>> GetPhotoMetadata([FromRoute] Guid id)
+    public async ValueTask<ActionResult<PhotoMetaDataDto>> GetPhotoMetadata(
+        [FromRoute] Guid id,
+        [FromQuery] string? shareKey = null,
+        [FromQuery] string? sharePassword = null)
     {
         if (id == Guid.Empty)
         {
@@ -119,33 +108,14 @@ public sealed class PhotoController(
 
         return await photoResult.Match<ValueTask<ActionResult<PhotoMetaDataDto>>>(async photo =>
         {
-            // Check if user has access to this photo
-            var isAuthenticated = User.Identity?.IsAuthenticated == true;
-            if (isAuthenticated)
+            if (!await HasPhotoAccessAsync(photo, shareKey, sharePassword))
             {
-                string? externalSub = User.FindFirst("sub")?.Value;
-                if (!string.IsNullOrWhiteSpace(externalSub))
-                {
-                    var currentUser = await uow.UserRepository.GetUserByExternalSubAsync(externalSub);
-                    if (currentUser?.Id == photo.UserId)
-                    {
-                        // Owner can always access their own photos
-                        return Ok(this.MapPhotoToMetadata(photo));
-                    }
-                }
+                logger.LogInformation("User tried to access photo {PhotoId} without proper access", id);
+
+                return Unauthorized();
             }
 
-            // Check if photo is in any public album
-            var photoWithAlbums = await uow.PhotoRepository.GetPhotoByIdWithAlbumsAsync(id);
-            if (photoWithAlbums?.Albums.Any(a => a.IsPublic) == true)
-            {
-                return Ok(this.MapPhotoToMetadata(photo));
-            }
-
-            // TODO: In the future, check share keys here for additional access
-
-            logger.LogInformation("User tried to access photo {PhotoId} without proper access", id);
-            return NotFound();
+            return Ok(this.MapPhotoToMetadata(photo));
         }, _ => ValueTask.FromResult<ActionResult<PhotoMetaDataDto>>(NotFound()));
     }
 
@@ -175,8 +145,48 @@ public sealed class PhotoController(
             CountryCode = photo.CountryCode,
             City = photo.City,
             IsLivePhoto = photo.IsLivePhoto,
-            Reactions = photo.Reactions.GroupBy(r => r.Reaction).ToDictionary(g => g.Key, g => (uint)g.Count()),
+            Reactions = photo.Reactions.GroupBy(r => r.Reaction).ToDictionary(g => g.Key, g => (uint) g.Count()),
             FileName = photo.FileName
         };
+    }
+
+    /// <summary>
+    /// Checks whether the user has access to the specified photo.
+    /// </summary>
+    private async ValueTask<bool> HasPhotoAccessAsync(belvedere.Persistence.Model.Photo photo, string? shareKey,
+                                                      string? sharePassword)
+    {
+        var isAuthenticated = User.Identity?.IsAuthenticated == true;
+        if (isAuthenticated)
+        {
+            string? externalSub = User.FindFirst("sub")?.Value;
+            if (!string.IsNullOrWhiteSpace(externalSub))
+            {
+                var currentUser = await uow.UserRepository.GetUserByExternalSubAsync(externalSub);
+                if (currentUser?.Id == photo.UserId)
+                {
+                    return true;
+                }
+            }
+        }
+
+        var photoWithAlbums = await uow.PhotoRepository.GetPhotoByIdWithAlbumsAsync(photo.Id);
+        if (photoWithAlbums?.Albums.Any(a => a.IsPublic) == true)
+        {
+            return true;
+        }
+
+        if (!string.IsNullOrWhiteSpace(shareKey))
+        {
+            var resolution = await shareService.ResolveShareAsync(shareKey, sharePassword);
+
+            return
+                resolution.Match(validKey => validKey.PhotoId == photo.Id || (validKey.AlbumId is not null && photoWithAlbums?.Albums.Any(a => a.Id == validKey.AlbumId) == true),
+                                 _ => false,
+                                 _ => false,
+                                 _ => false);
+        }
+
+        return false;
     }
 }

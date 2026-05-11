@@ -7,8 +7,7 @@ public sealed class ShareKey
     public Guid Id { get; set; }
     public Guid? AlbumId { get; set; }
     public Guid? PhotoId { get; set; }
-
-    // The share key/token (e.g. a GUID, short token, or encoded value). Keep length reasonable.
+    
     [MaxLength(128)]
     public required string Key { get; set; }
 

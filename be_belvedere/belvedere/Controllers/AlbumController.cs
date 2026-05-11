@@ -19,6 +19,7 @@ public sealed class AlbumController(
     IUnitOfWork uow,
     IAlbumService albumService,
     ITransactionProvider transactionProvider,
+    IShareService shareService,
     IStorageService storageService,
     ILogger<AlbumController> logger) : BaseController
 {
@@ -69,13 +70,18 @@ public sealed class AlbumController(
     /// Retrieves a specific album with all its photos.
     /// </summary>
     /// <param name="id">The unique identifier of the album.</param>
+    /// <param name="shareKey">Optional share key for access to non-public albums.</param>
+    /// <param name="sharePassword">Optional password if the share key is password-protected.</param>
     /// <returns>The album with all its photos.</returns>
     /// <response code="200">Returns the album and its photos successfully.</response>
     /// <response code="404">The album does not exist or the user does not have access to it.</response>
     [HttpGet("/preload/{id:guid}")]
     [ProducesResponseType<AlbumExtendedDto>(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public async ValueTask<ActionResult<AlbumExtendedDto>> PreloadAlbum([FromRoute] Guid id)
+    public async ValueTask<ActionResult<AlbumExtendedDto>> PreloadAlbum(
+        [FromRoute] Guid id,
+        [FromQuery] string? shareKey = null,
+        [FromQuery] string? sharePassword = null)
     {
         if (id == Guid.Empty)
         {
@@ -88,13 +94,7 @@ public sealed class AlbumController(
             return NotFound();
         }
 
-        // Check access: either user is owner, album is public, or user accessed via share key
-        var isAuthenticated = User.Identity?.IsAuthenticated == true;
-        var currentUser = isAuthenticated ? await GetCurrentUserAsync() : null;
-        var isOwner = currentUser?.Id == album.UserId;
-        var isPublic = album.IsPublic;
-
-        if (!isOwner && !isPublic)
+        if (!await HasAlbumAccessAsync(album, shareKey, sharePassword))
         {
             return NotFound();
         }
@@ -129,13 +129,18 @@ public sealed class AlbumController(
     /// Retrieves a specific album with all its photo thumbnails.
     /// </summary>
     /// <param name="id">The unique identifier of the album.</param>
+    /// <param name="shareKey">Optional share key for access to non-public albums.</param>
+    /// <param name="sharePassword">Optional password if the share key is password-protected.</param>
     /// <returns>The album with all its photo thumbnails.</returns>
     /// <response code="200">Returns the album and its photo thumbnails successfully.</response>
     /// <response code="404">The album does not exist or the user does not have access to it.</response>
     [HttpGet("{id:guid}/thumbnails")]
     [ProducesResponseType<AlbumThumbnailDto>(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public async ValueTask<ActionResult<AlbumThumbnailDto>> GetAlbumThumbnails([FromRoute] Guid id)
+    public async ValueTask<ActionResult<AlbumThumbnailDto>> GetAlbumThumbnails(
+        [FromRoute] Guid id,
+        [FromQuery] string? shareKey = null,
+        [FromQuery] string? sharePassword = null)
     {
         if (id == Guid.Empty)
         {
@@ -148,13 +153,7 @@ public sealed class AlbumController(
             return NotFound();
         }
 
-        // Check access: either user is owner, album is public, or user accessed via share key
-        var isAuthenticated = User.Identity?.IsAuthenticated == true;
-        var currentUser = isAuthenticated ? await GetCurrentUserAsync() : null;
-        var isOwner = currentUser?.Id == album.UserId;
-        var isPublic = album.IsPublic;
-
-        if (!isOwner && !isPublic)
+        if (!await HasAlbumAccessAsync(album, shareKey, sharePassword))
         {
             return NotFound();
         }
@@ -469,5 +468,31 @@ public sealed class AlbumController(
         }
 
         return await uow.UserRepository.GetUserByExternalSubAsync(externalSub);
+    }
+
+    /// <summary>
+    /// Checks whether the user has access to the specified album.
+    /// </summary>
+    private async ValueTask<bool> HasAlbumAccessAsync(Album album, string? shareKey, string? sharePassword)
+    {
+        var isAuthenticated = User.Identity?.IsAuthenticated == true;
+        var currentUser = isAuthenticated ? await GetCurrentUserAsync() : null;
+        if (currentUser?.Id == album.UserId || album.IsPublic)
+        {
+            return true;
+        }
+
+        if (!string.IsNullOrWhiteSpace(shareKey))
+        {
+            var resolution = await shareService.ResolveShareAsync(shareKey, sharePassword);
+            return resolution.Match(
+                validKey => validKey.AlbumId == album.Id,
+                _ => false,
+                _ => false,
+                _ => false
+            );
+        }
+
+        return false;
     }
 }
