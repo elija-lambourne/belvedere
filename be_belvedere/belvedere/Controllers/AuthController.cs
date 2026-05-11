@@ -1,81 +1,87 @@
-﻿using Microsoft.AspNetCore.Authentication;
+﻿using System.Security.Claims;
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
+using Microsoft.AspNetCore.Antiforgery;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.AspNetCore.Antiforgery;
 
 namespace belvedere.Controllers;
 
-/// <summary>
-/// API controller handling the Backend-For-Frontend (BFF) authentication flows.
-/// </summary>
 [Route("api/auth")]
 [ApiController]
-public class AuthController : ControllerBase
+public class AuthController(IAntiforgery antiforgery) : ControllerBase
 {
     /// <summary>
-    /// Initiates the OpenID Connect login flow.
+    /// Initiates the OIDC login flow.
     /// </summary>
-    /// <param name="returnUrl">The URL to return to after successful login.</param>
+    /// <param name="returnUrl">The URL to redirect to after successful login.</param>
     [HttpGet("login")]
-    public IActionResult Login([FromQuery] string returnUrl = "/")
+    [AllowAnonymous]
+    public IActionResult Login([FromQuery] string? returnUrl = "/")
     {
-        return Challenge(new AuthenticationProperties { RedirectUri = returnUrl }, OpenIdConnectDefaults.AuthenticationScheme);
+        var props = new AuthenticationProperties { RedirectUri = returnUrl };
+        return Challenge(props, OpenIdConnectDefaults.AuthenticationScheme);
     }
 
     /// <summary>
-    /// Initiates the OpenID Connect logout flow.
+    /// Initiates the OIDC logout flow.
     /// </summary>
-    /// <param name="returnUrl">The URL to return to after successful logout.</param>
+    /// <param name="returnUrl">The URL to redirect to after logout.</param>
+    [HttpGet("logout")]
     [Authorize]
-    [HttpPost("logout")]
-    public IActionResult Logout([FromQuery] string returnUrl = "/")
+    public IActionResult Logout([FromQuery] string? returnUrl = "/")
     {
-        // Sign out of both the local cookie and the upstream OIDC provider
-        return SignOut(new AuthenticationProperties { RedirectUri = returnUrl }, 
-            CookieAuthenticationDefaults.AuthenticationScheme, 
-            OpenIdConnectDefaults.AuthenticationScheme);
+        var props = new AuthenticationProperties { RedirectUri = returnUrl };
+        return SignOut(props, CookieAuthenticationDefaults.AuthenticationScheme, OpenIdConnectDefaults.AuthenticationScheme);
     }
 
     /// <summary>
-    /// Returns the currently authenticated user's profile and claims.
+    /// Returns the currently authenticated user's information.
     /// </summary>
     [HttpGet("me")]
+    [Authorize]
     public IActionResult GetCurrentUser()
     {
-        if (User.Identity?.IsAuthenticated != true)
+        var user = User.Identity;
+        if (user is null || !user.IsAuthenticated)
         {
             return Unauthorized();
         }
 
-        var claims = User.Claims.GroupBy(c => c.Type).ToDictionary(g => g.Key, g => g.Select(c => c.Value).ToList());
-        
-        return Ok(new 
-        { 
-            IsAuthenticated = true, 
-            Name = User.Identity.Name,
-            UserId = User.FindFirst("sub")?.Value,
-            Claims = claims 
+        return Ok(new
+        {
+            Id = User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? User.FindFirst("sub")?.Value,
+            Name = User.FindFirst(ClaimTypes.Name)?.Value ?? User.FindFirst("preferred_username")?.Value,
+            Email = User.FindFirst(ClaimTypes.Email)?.Value,
+            Roles = User.FindAll(ClaimTypes.Role).Select(c => c.Value).ToList()
         });
     }
 
     /// <summary>
-    /// Provides an Anti-Forgery (CSRF) token to the frontend.
+    /// Provides the CSRF token to the frontend.
     /// </summary>
+    /// <remarks>
+    /// The frontend should call this endpoint on initialization and write the response token
+    /// into the 'X-XSRF-TOKEN' header for all state-changing requests (POST, PUT, DELETE).
+    /// </remarks>
     [HttpGet("csrf")]
-    public IActionResult GetCsrfToken([FromServices] IAntiforgery antiforgery)
+    [AllowAnonymous]
+    public IActionResult GetCsrfToken()
     {
         var tokens = antiforgery.GetAndStoreTokens(HttpContext);
         
-        // Append the token as a cookie that JavaScript can read
-        HttpContext.Response.Cookies.Append("XSRF-TOKEN", tokens.RequestToken!, new CookieOptions
-        {
-            HttpOnly = false, // Critical: JS must be able to read it to send it in the header
-            Secure = true,    // Enforce HTTPS
-            SameSite = SameSiteMode.Strict, // Strictly limit to the same site
-            Path = "/"
-        });
+        // Write the token to a non-HttpOnly cookie so the SPA can read it (Axios does this automatically)
+        HttpContext.Response.Cookies.Append(
+            "XSRF-TOKEN",
+            tokens.RequestToken!,
+            new CookieOptions
+            {
+                HttpOnly = false,
+                Path = "/",
+                Secure = HttpContext.Request.IsHttps,
+                SameSite = SameSiteMode.Strict // Adjust to Lax if cross-origin redirects break
+            });
 
         return NoContent();
     }
