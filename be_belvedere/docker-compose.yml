@@ -1,6 +1,6 @@
 ﻿services:
   postgres:
-    image: postgres:16-alpine
+    image: postgres:18-alpine
     restart: unless-stopped
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-belvedere}
@@ -9,7 +9,7 @@
     ports:
       - '${POSTGRES_PORT:-5432}:5432'
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - postgres_data:/var/lib/postgresql
     healthcheck:
       test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-belvedere} -d ${POSTGRES_DB:-belvedere}']
       interval: 10s
@@ -27,15 +27,15 @@
         condition: service_healthy
     environment:
       ASPNETCORE_ENVIRONMENT: ${ASPNETCORE_ENVIRONMENT:-Development}
-      ASPNETCORE_URLS: http://+:8080
-      General__ClientOrigin: ${General__ClientOrigin:-http://localhost:4200}
+      ASPNETCORE_URLS: http://+:${API_PORT:-5001}
+      General__ClientOrigin: ${General__ClientOrigin:-http://localhost:5173}
       Keycloak__Authority: ${Keycloak__Authority}
       Keycloak__ClientId: ${Keycloak__ClientId}
       Keycloak__ClientSecret: ${Keycloak__ClientSecret}
       Keycloak__RequireHttpsMetadata: ${Keycloak__RequireHttpsMetadata:-false}
       ConnectionStrings__Postgres: Host=postgres;Port=5432;Database=${POSTGRES_DB:-belvedere};Username=${POSTGRES_USER:-belvedere};Password=${POSTGRES_PASSWORD:-belvedere}
     ports:
-      - '${API_PORT:-8080}:8080'
+      - '${API_PORT:-5001}:8080'
     volumes:
       - ./belvedere/Logs:/app/Logs
 

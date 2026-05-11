@@ -1,7 +1,7 @@
 using belvedere.Persistence.Model;
 
 namespace belvedere.Core.Logic;
-
+/*
 public static class RocketExtensions
 {
     private const double MinThrustToWeightRatio = 1.5D;
@@ -15,3 +15,4 @@ public static class RocketExtensions
         return (takeoffPossible, thrustToWeightRatio);
     }
 }
+*/

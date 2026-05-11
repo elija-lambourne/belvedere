@@ -14,7 +14,10 @@ public interface ITransactionProvider : IAsyncDisposable, IDisposable
 
 public interface IUnitOfWork
 {
-    public IRocketRepository RocketRepository { get; }
+    public IPhotoRepository PhotoRepository { get; }
+    public IAlbumRepository AlbumRepository { get; }
+    public IUserRepository UserRepository { get; }
+    public IShareKeyRepository ShareKeyRepository { get; }
     public Task SaveChangesAsync();
 }
 
@@ -23,7 +26,10 @@ internal sealed class UnitOfWork(DatabaseContext context, ILogger<UnitOfWork> lo
 {
     private IDbContextTransaction? _transaction;
     
-    public IRocketRepository RocketRepository => new RocketRepository(context.Rockets);
+    public IPhotoRepository PhotoRepository => new PhotoRepository(context.Photos);
+    public IAlbumRepository AlbumRepository => new AlbumRepository(context.Albums);
+    public IUserRepository UserRepository => new UserRepository(context.Users);
+    public IShareKeyRepository ShareKeyRepository => new ShareKeyRepository(context.ShareKeys);
 
     public async ValueTask BeginTransactionAsync()
     {
