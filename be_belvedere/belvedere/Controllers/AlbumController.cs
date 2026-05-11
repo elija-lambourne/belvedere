@@ -3,6 +3,7 @@ using belvedere.Core.Services;
 using belvedere.Persistence.Model;
 using belvedere.Persistence.Util;
 using belvedere.Util;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using OneOf;
 using OneOf.Types;
@@ -13,10 +14,17 @@ namespace belvedere.Controllers;
 ///     API controller for managing albums and their photos.
 /// </summary>
 /// <remarks>
-///     Provides endpoints for authenticated users to manage albums and organize photos.
-///     Public albums can be viewed by anyone without authentication.
+///     This controller is part of the Backend-for-Frontend (BFF) pattern and provides endpoints for:
+///     - Authenticated users to manage albums and organize their photos
+///     - Public read-only access to albums marked as public
+///     - Share-key access to non-public albums via secure, password-protected share links
+///     
+///     Most endpoints require Keycloak OIDC authentication via session cookies.
+///     Album modification endpoints (create, update, delete) require user authentication.
+///     Read endpoints support both authenticated and share-key based access.
 /// </remarks>
 [Route("api/albums")]
+[ApiController]
 public sealed class AlbumController(
     IUnitOfWork uow,
     IAlbumService albumService,
@@ -29,9 +37,14 @@ public sealed class AlbumController(
     ///     Retrieves all albums for the authenticated user.
     /// </summary>
     /// <returns>A list of albums owned by the current user.</returns>
+    /// <remarks>
+    ///     This endpoint requires user authentication via Keycloak OIDC. Only returns albums owned by the authenticated user.
+    ///     Albums are returned with basic information including photo count and cover photo reference.
+    /// </remarks>
     /// <response code="200">Returns the list of albums successfully.</response>
     /// <response code="401">User is not authenticated.</response>
     [HttpGet]
+    [Authorize]
     [ProducesResponseType<List<AlbumDto>>(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     public async ValueTask<ActionResult<List<AlbumDto>>> GetAlbums()
@@ -72,14 +85,30 @@ public sealed class AlbumController(
     ///     Retrieves a specific album with all its photos.
     /// </summary>
     /// <param name="id">The unique identifier of the album.</param>
-    /// <param name="shareKey">Optional share key for access to non-public albums.</param>
+    /// <param name="shareKey">Optional share key for access to non-public albums. Required if accessing a non-public album without authentication.</param>
     /// <param name="sharePassword">Optional password if the share key is password-protected.</param>
     /// <returns>The album with all its photos.</returns>
+    /// <remarks>
+    ///     <para>
+    ///         Access is allowed in the following scenarios:
+    ///         1. User is authenticated and owns the album
+    ///         2. The album is marked as public (no authentication required)
+    ///         3. A valid, non-expired share key is provided (optionally password-protected)
+    ///     </para>
+    ///     <para>
+    ///         Returns full photo objects with blur hash for placeholder rendering.
+    ///     </para>
+    /// </remarks>
     /// <response code="200">Returns the album and its photos successfully.</response>
+    /// <response code="401">The share key requires a password (only sent with key, no password provided).</response>
     /// <response code="404">The album does not exist or the user does not have access to it.</response>
+    /// <response code="410">The share key has expired.</response>
     [HttpGet("{id:guid}/preload")]
+    [AllowAnonymous]
     [ProducesResponseType<AlbumExtendedDto>(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status410Gone)]
     public async ValueTask<ActionResult<AlbumExtendedDto>> PreloadAlbum(
         [FromRoute] Guid id,
         [FromQuery] string? shareKey = null,
@@ -128,17 +157,34 @@ public sealed class AlbumController(
     }
 
     /// <summary>
-    ///     Retrieves a specific album with all its photo thumbnails.
+    ///     Retrieves a specific album with all its photo thumbnails (including presigned URLs).
     /// </summary>
     /// <param name="id">The unique identifier of the album.</param>
-    /// <param name="shareKey">Optional share key for access to non-public albums.</param>
+    /// <param name="shareKey">Optional share key for access to non-public albums. Required if accessing a non-public album without authentication.</param>
     /// <param name="sharePassword">Optional password if the share key is password-protected.</param>
-    /// <returns>The album with all its photo thumbnails.</returns>
+    /// <returns>The album with all its photo thumbnails including presigned URLs.</returns>
+    /// <remarks>
+    ///     <para>
+    ///         This endpoint is typically used for loading album preview/gallery views with fast image loading.
+    ///         Each photo includes a 5-minute presigned URL for viewing the thumbnail from S3 storage.
+    ///     </para>
+    ///     <para>
+    ///         Access is allowed in the following scenarios:
+    ///         1. User is authenticated and owns the album
+    ///         2. The album is marked as public (no authentication required)
+    ///         3. A valid, non-expired share key is provided (optionally password-protected)
+    ///     </para>
+    /// </remarks>
     /// <response code="200">Returns the album and its photo thumbnails successfully.</response>
+    /// <response code="401">The share key requires a password (only sent with key, no password provided).</response>
     /// <response code="404">The album does not exist or the user does not have access to it.</response>
+    /// <response code="410">The share key has expired.</response>
     [HttpGet("{id:guid}/thumbnails")]
+    [AllowAnonymous]
     [ProducesResponseType<AlbumThumbnailDto>(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status410Gone)]
     public async ValueTask<ActionResult<AlbumThumbnailDto>> GetAlbumThumbnails(
         [FromRoute] Guid id,
         [FromQuery] string? shareKey = null,
@@ -206,10 +252,15 @@ public sealed class AlbumController(
     /// </summary>
     /// <param name="request">The album creation request.</param>
     /// <returns>The created album.</returns>
+    /// <remarks>
+    ///     This endpoint requires user authentication via Keycloak OIDC. CSRF token must be provided in the X-XSRF-TOKEN header.
+    ///     The authenticated user becomes the owner of the newly created album.
+    /// </remarks>
     /// <response code="201">Album created successfully.</response>
-    /// <response code="400">Invalid request.</response>
+    /// <response code="400">Invalid request (missing title or other validation failed).</response>
     /// <response code="401">User is not authenticated.</response>
     [HttpPost]
+    [Authorize]
     [ProducesResponseType<AlbumDto>(StatusCodes.Status201Created)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
@@ -266,11 +317,16 @@ public sealed class AlbumController(
     /// </summary>
     /// <param name="id">The unique identifier of the album to delete.</param>
     /// <returns>No content on success.</returns>
+    /// <remarks>
+    ///     This endpoint requires user authentication via Keycloak OIDC. CSRF token must be provided in the X-XSRF-TOKEN header.
+    ///     Only the album owner can delete the album. The user is identified via the "sub" claim from the OIDC token.
+    /// </remarks>
     /// <response code="204">Album deleted successfully.</response>
     /// <response code="401">User is not authenticated.</response>
-    /// <response code="403">User does not have permission to delete this album.</response>
+    /// <response code="403">User does not own this album.</response>
     /// <response code="404">Album not found.</response>
     [HttpDelete("{id:guid}")]
+    [Authorize]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
@@ -334,11 +390,16 @@ public sealed class AlbumController(
     /// <param name="albumId">The unique identifier of the album.</param>
     /// <param name="photoId">The unique identifier of the photo to add.</param>
     /// <returns>No content on success.</returns>
+    /// <remarks>
+    ///     This endpoint requires user authentication via Keycloak OIDC. CSRF token must be provided in the X-XSRF-TOKEN header.
+    ///     Only the album owner can add photos to the album. Both the album and photo must exist and be owned by the authenticated user.
+    /// </remarks>
     /// <response code="204">Photo added to album successfully.</response>
     /// <response code="401">User is not authenticated.</response>
-    /// <response code="403">User does not have permission to modify this album.</response>
+    /// <response code="403">User does not own this album.</response>
     /// <response code="404">Album or photo not found.</response>
     [HttpPost("{albumId:guid}/photos/{photoId:guid}")]
+    [Authorize]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
@@ -403,11 +464,16 @@ public sealed class AlbumController(
     /// <param name="albumId">The unique identifier of the album.</param>
     /// <param name="photoId">The unique identifier of the photo to remove.</param>
     /// <returns>No content on success.</returns>
+    /// <remarks>
+    ///     This endpoint requires user authentication via Keycloak OIDC. CSRF token must be provided in the X-XSRF-TOKEN header.
+    ///     Only the album owner can remove photos from the album. Both the album and photo must exist and the album must be owned by the authenticated user.
+    /// </remarks>
     /// <response code="204">Photo removed from album successfully.</response>
     /// <response code="401">User is not authenticated.</response>
-    /// <response code="403">User does not have permission to modify this album.</response>
+    /// <response code="403">User does not own this album.</response>
     /// <response code="404">Album or photo not found.</response>
     [HttpDelete("{albumId:guid}/photos/{photoId:guid}")]
+    [Authorize]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]

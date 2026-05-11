@@ -190,3 +190,84 @@ public sealed record PhotoMetaDataDto : PhotoDto
 
     public required Dictionary<ReactionType, uint> Reactions { get; init; }
 }
+
+/// <summary>
+/// Request model for uploading a new photo.
+/// </summary>
+/// <remarks>
+/// The file should be submitted as multipart/form-data with the photo file in the "file" field.
+/// All other properties are optional in the form submission but title is recommended.
+/// </remarks>
+public sealed class CreatePhotoRequest
+{
+    /// <summary>
+    /// The photo file to be uploaded. Should be a valid image file.
+    /// </summary>
+    public required IFormFile File { get; set; }
+
+    /// <summary>
+    /// Optional title for the photo.
+    /// </summary>
+    public string? Title { get; set; }
+
+    /// <summary>
+    /// Optional description for the photo.
+    /// </summary>
+    public string? Description { get; set; }
+}
+
+/// <summary>
+/// Response model for a successfully created photo.
+/// </summary>
+/// <remarks>
+/// Contains the basic metadata of the newly created photo and a presigned URL
+/// for accessing the stored photo.
+/// </remarks>
+public sealed class CreatePhotoResponse
+{
+    /// <summary>
+    /// The unique identifier of the newly created photo.
+    /// </summary>
+    public required Guid Id { get; init; }
+
+    /// <summary>
+    /// The title of the photo (may be null).
+    /// </summary>
+    public string? Title { get; init; }
+
+    /// <summary>
+    /// The original filename of the uploaded photo.
+    /// </summary>
+    public required string FileName { get; init; }
+
+    /// <summary>
+    /// The MIME type of the photo file.
+    /// </summary>
+    public required string MimeType { get; init; }
+
+    /// <summary>
+    /// The width of the photo in pixels.
+    /// </summary>
+    public int Width { get; init; }
+
+    /// <summary>
+    /// The height of the photo in pixels.
+    /// </summary>
+    public int Height { get; init; }
+
+    /// <summary>
+    /// The size of the original file in bytes.
+    /// </summary>
+    public long FileSize { get; init; }
+
+    /// <summary>
+    /// The date and time when the photo was created/uploaded.
+    /// </summary>
+    public DateTime CreatedAt { get; init; }
+
+    /// <summary>
+    /// A temporary presigned URL for accessing the photo (valid for 5 minutes).
+    /// </summary>
+    public required string TemporaryUrl { get; init; }
+}
+

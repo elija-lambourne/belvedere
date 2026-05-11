@@ -5,6 +5,7 @@ using belvedere.Persistence.Model;
 using belvedere.Persistence.Util;
 using belvedere.Util;
 using FluentValidation;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
 using OneOf;
@@ -16,11 +17,15 @@ namespace belvedere.Controllers;
 ///     API controller for managing share links for photos and albums.
 /// </summary>
 /// <remarks>
-///     Provides endpoints for authenticated users to create and retrieve share links for their photos and albums.
-///     Share links can be optionally password-protected and can have expiration times.
-///     Provides both authenticated share creation and public share retrieval endpoints.
+///     This controller is part of the Backend-for-Frontend (BFF) pattern and provides endpoints for:
+///     - Authenticated users to create and manage share links for their photos and albums
+///     - Public retrieval of share link information via share key (with optional password protection)
+///     
+///     Share creation requires user authentication via Keycloak OIDC. Share retrieval ("resolve") is public
+///     and supports optional share-key password protection and expiration time checking.
 /// </remarks>
 [Route("api/shares")]
+[ApiController]
 public sealed class ShareController(
     ITransactionProvider transaction,
     IUnitOfWork uow,
@@ -38,10 +43,20 @@ public sealed class ShareController(
     ///     A <see cref="CreateShareResponse" /> containing the generated share key, shareable URL, and expiration time.
     /// </returns>
     /// <remarks>
-    ///     This endpoint requires user authentication. The authenticated user must be the owner of the photo or album
-    ///     being shared. The share key is generated using cryptographically secure randomness and is unique.
-    ///     If a password is provided, it will be hashed using PBKDF2-SHA256 before storage.
-    ///     Changes are committed within a database transaction; if any error occurs, the transaction is rolled back.
+    ///     <para>
+    ///         This endpoint requires user authentication via Keycloak OIDC. CSRF token must be provided in the X-XSRF-TOKEN header.
+    ///         The authenticated user must be the owner of the photo or album being shared.
+    ///     </para>
+    ///     <para>
+    ///         The share key is generated using cryptographically secure randomness and is guaranteed to be unique.
+    ///         If a password is provided, it will be hashed using PBKDF2-SHA256 before storage.
+    ///         
+    ///         Changes are committed within a database transaction; if any error occurs, the transaction is rolled back.
+    ///     </para>
+    ///     <para>
+    ///         Share links support both public (no password) and password-protected access patterns, and can optionally
+    ///         expire at a specified time. Once expired, the share returns HTTP 410 Gone.
+    ///     </para>
     /// </remarks>
     /// <response code="201">Share link created successfully.</response>
     /// <response code="400">Invalid request data (validation failed or invalid target type).</response>
@@ -49,6 +64,7 @@ public sealed class ShareController(
     /// <response code="404">The photo/album does not exist or the user does not own it.</response>
     [HttpPost]
     [Route("")]
+    [Authorize]
     [ProducesResponseType<CreateShareResponse>(StatusCodes.Status201Created)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
@@ -161,9 +177,14 @@ public sealed class ShareController(
     ///     A <see cref="ShareResolutionResponse" /> containing the target type and target ID.
     /// </returns>
     /// <remarks>
-    ///     This endpoint is public and does not require authentication.
-    ///     If the share is password-protected, the correct password must be provided in the query string.
-    ///     If the share has an expiration date and that date has passed, an HTTP 410 Gone status is returned.
+    ///     <para>
+    ///         This endpoint is public and does not require authentication. It allows anyone to resolve a share key
+    ///         to determine what resource (photo or album) it points to.
+    ///     </para>
+    ///     <para>
+    ///         If the share is password-protected, the correct password must be provided in the query string.
+    ///         If the share has an expiration date and that date has passed, an HTTP 410 Gone status is returned.
+    ///     </para>
     /// </remarks>
     /// <response code="200">The shared resource was resolved successfully.</response>
     /// <response code="401">The share is password-protected and the password is incorrect or missing.</response>
@@ -171,6 +192,7 @@ public sealed class ShareController(
     /// <response code="410">The share link has expired.</response>
     [HttpGet]
     [Route("{key}")]
+    [AllowAnonymous]
     [ProducesResponseType<ShareResolutionResponse>(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]

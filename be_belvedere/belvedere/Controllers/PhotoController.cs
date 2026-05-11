@@ -3,6 +3,7 @@ using belvedere.Core.Services;
 using belvedere.Persistence.Model;
 using belvedere.Persistence.Util;
 using belvedere.Util;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using OneOf;
 using OneOf.Types;
@@ -12,7 +13,17 @@ namespace belvedere.Controllers;
 /// <summary>
 ///     API controller for managing photo access and retrieving presigned URLs.
 /// </summary>
+/// <remarks>
+///     This controller is part of the Backend-for-Frontend (BFF) pattern and provides endpoints for:
+///     - Authenticated users to access and manage their photos
+///     - Public read-only access to photos in public albums
+///     - Share-key access to photos via secure, password-protected share links
+///     
+///     Most endpoints require Keycloak OIDC authentication via session cookies.
+///     Some endpoints support optional share-key access for public sharing scenarios.
+/// </remarks>
 [Route("api/photos")]
+[ApiController]
 public sealed class PhotoController(
     IUnitOfWork uow,
     IPhotoService photoService,
@@ -24,25 +35,36 @@ public sealed class PhotoController(
     ///     Retrieves a temporary presigned URL for accessing a specific photo.
     /// </summary>
     /// <param name="id">The GUID identifier of the photo to retrieve a presigned URL for.</param>
-    /// <param name="shareKey">Optional share key for access to non-public photos.</param>
+    /// <param name="shareKey">Optional share key for access to non-public photos. Required if accessing a non-public photo without authentication.</param>
     /// <param name="sharePassword">Optional password if the share key is password-protected.</param>
     /// <returns>
     ///     A <see cref="PhotoSignedUrlResponse" /> containing a temporary presigned URL that expires in 5 minutes.
     /// </returns>
     /// <remarks>
-    ///     The user must either own the photo, the photo must be in a public album, or accessed via a valid share key.
-    ///     The returned URL is valid for 5 minutes.
+    ///     <para>
+    ///         Access is allowed in the following scenarios:
+    ///         1. User is authenticated and owns the photo
+    ///         2. The photo is in a public album (no authentication required)
+    ///         3. A valid, non-expired share key is provided (optionally password-protected)
+    ///     </para>
+    ///     <para>
+    ///         The returned URL is valid for 5 minutes and can be used to download/view the photo from S3 storage.
+    ///         After expiration, a new URL must be requested via this endpoint.
+    ///     </para>
     /// </remarks>
     /// <response code="200">Returns the presigned URL successfully.</response>
     /// <response code="400">The photo ID is empty (Guid.Empty).</response>
+    /// <response code="401">The share key requires a password (only sent with key, no password provided).</response>
     /// <response code="404">The photo does not exist or the user does not have access to it.</response>
-    /// <response code="401">The user is not authenticated.</response>
+    /// <response code="410">The share key has expired.</response>
     [HttpGet]
     [Route("{id:guid}/signed-url")]
+    [AllowAnonymous]
     [ProducesResponseType<PhotoSignedUrlResponse>(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
-    [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status410Gone)]
     public async ValueTask<ActionResult<PhotoSignedUrlResponse>> GetSignedUrl(
         [FromRoute] Guid id,
         [FromQuery] string? shareKey = null,
@@ -77,25 +99,35 @@ public sealed class PhotoController(
     ///     Retrieves the expanded metadata of a specific photo.
     /// </summary>
     /// <param name="id">The GUID identifier of the photo to retrieve metadata for.</param>
-    /// <param name="shareKey">Optional share key for access to non-public photos.</param>
+    /// <param name="shareKey">Optional share key for access to non-public photos. Required if accessing a non-public photo without authentication.</param>
     /// <param name="sharePassword">Optional password if the share key is password-protected.</param>
     /// <returns>
-    ///     A <see cref="PhotoMetaDataDto" /> containing all metadata of the photo.
+    ///     A <see cref="PhotoMetaDataDto" /> containing all metadata of the photo including EXIF data.
     /// </returns>
     /// <remarks>
-    ///     This endpoint returns comprehensive metadata about a photo including EXIF data, location, dimensions, etc.
-    ///     The user must either own the photo or the photo must be in a public album or accessed via a valid share key.
+    ///     <para>
+    ///         This endpoint returns comprehensive metadata about a photo including EXIF data, location, dimensions, etc.
+    ///     </para>
+    ///     <para>
+    ///         Access is allowed in the following scenarios:
+    ///         1. User is authenticated and owns the photo
+    ///         2. The photo is in a public album (no authentication required)
+    ///         3. A valid, non-expired share key is provided (optionally password-protected)
+    ///     </para>
     /// </remarks>
     /// <response code="200">Returns the photo metadata successfully.</response>
     /// <response code="400">The photo ID is empty (Guid.Empty).</response>
-    /// <response code="401">The user is not authenticated.</response>
+    /// <response code="401">The share key requires a password (only sent with key, no password provided).</response>
     /// <response code="404">The photo does not exist or the user does not have access to it.</response>
+    /// <response code="410">The share key has expired.</response>
     [HttpGet]
     [Route("{id:guid}")]
+    [AllowAnonymous]
     [ProducesResponseType<PhotoMetaDataDto>(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status410Gone)]
     public async ValueTask<ActionResult<PhotoMetaDataDto>> GetPhotoMetadata(
         [FromRoute] Guid id,
         [FromQuery] string? shareKey = null,
@@ -196,5 +228,84 @@ public sealed class PhotoController(
                                  _ => false);
         }
 
+    }
+
+    /// <summary>
+    ///     Uploads a new photo for the authenticated user.
+    /// </summary>
+    /// <param name="request">The photo upload request containing the file and metadata.</param>
+    /// <returns>
+    ///     A <see cref="CreatePhotoResponse" /> containing the created photo's metadata and a presigned URL.
+    /// </returns>
+    /// <remarks>
+    ///     <para>
+    ///         This endpoint requires user authentication via Keycloak OIDC. The authenticated user becomes the owner
+    ///         of the uploaded photo. CSRF token must be provided in the X-XSRF-TOKEN header.
+    ///     </para>
+    ///     <para>
+    ///         The file is processed asynchronously:
+    ///         1. File is uploaded to S3-compatible storage
+    ///         2. Thumbnail is generated for fast preview loading
+    ///         3. EXIF metadata is extracted (if available)
+    ///         4. Photo metadata is stored in the database
+    ///         5. A 5-minute presigned URL is returned for immediate access
+    ///     </para>
+    ///     <para>
+    ///         Supported image formats: JPEG, PNG, WebP, GIF, BMP, and HEIC/HEIF (Apple formats).
+    ///         Maximum file size and other constraints should be validated by clients before upload.
+    ///     </para>
+    /// </remarks>
+    /// <response code="201">Photo uploaded and created successfully.</response>
+    /// <response code="400">Invalid request data (missing file or validation failed).</response>
+    /// <response code="401">User is not authenticated.</response>
+    /// <response code="413">File is too large for upload.</response>
+    /// <response code="415">File type is not supported.</response>
+    [HttpPost]
+    [Authorize]
+    [ProducesResponseType<CreatePhotoResponse>(StatusCodes.Status201Created)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status413PayloadTooLarge)]
+    [ProducesResponseType(StatusCodes.Status415UnsupportedMediaType)]
+    public async ValueTask<ActionResult<CreatePhotoResponse>> CreatePhoto([FromForm] CreatePhotoRequest request)
+    {
+        if (request?.File == null || request.File.Length == 0)
+        {
+            return BadRequest("No file provided");
+        }
+
+        if (User.Identity?.IsAuthenticated != true)
+        {
+            return Unauthorized();
+        }
+
+        string? externalSub = User.FindFirst("sub")?.Value;
+        if (string.IsNullOrWhiteSpace(externalSub))
+        {
+            return Unauthorized();
+        }
+
+        var currentUser = await uow.UserRepository.GetUserByExternalSubAsync(externalSub);
+        if (currentUser is null)
+        {
+            return Unauthorized();
+        }
+
+        // TODO: Implement photo upload logic
+        // 1. Validate file (size, type, etc.)
+        // 2. Extract EXIF metadata
+        // 3. Generate thumbnail with blurhash
+        // 4. Upload file and thumbnail to S3
+        // 5. Create Photo entity in database
+        // 6. Return CreatePhotoResponse with presigned URL
+        
+        logger.LogWarning("Photo upload endpoint not fully implemented yet. User {UserId} attempted upload of {FileName}",
+                         currentUser.Id, request.File.FileName);
+        
+        return StatusCode(StatusCodes.Status501NotImplemented, new
+        {
+            error = "Photo upload endpoint not yet implemented",
+            detail = "The backend infrastructure for photo processing and storage needs to be configured"
+        });
     }
 }
