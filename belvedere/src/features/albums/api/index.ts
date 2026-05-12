@@ -1,10 +1,19 @@
 /**
- * Albums API Client (Wretch Implementation)
+ * Albums API Client (Axios + Zod)
  *
- * Provides methods for album-related API calls
+ * Provides methods for album-related API calls.
  */
 
-import { apiWithCsrf } from "@/lib/axios.ts"
+import { apiWithCsrf } from "@/lib/axios"
+import {
+  albumExtendedSchema,
+  albumListSchema,
+  albumSchema,
+  albumWithThumbnailsSchema,
+  type Album,
+  type AlbumExtended,
+  type AlbumWithThumbnails,
+} from "@/types"
 
 
 export interface CreateAlbumInput {
@@ -17,10 +26,8 @@ export interface CreateAlbumInput {
  * Fetch all albums for the authenticated user
  */
 export async function listAlbums(): Promise<Album[]> {
-  return apiWithCsrf
-    .url("/albums")
-    .get()
-    .json<Album[]>()
+  const data = await apiWithCsrf.url("/albums").get().json<unknown>()
+  return albumListSchema.parse(data)
 }
 
 /**
@@ -38,7 +45,8 @@ export async function getAlbumPreload(
     req = req.query({ shareKey, sharePassword })
   }
 
-  return req.get().json<AlbumExtended>()
+  const data = await req.get().json<unknown>()
+  return albumExtendedSchema.parse(data)
 }
 
 /**
@@ -56,17 +64,16 @@ export async function getAlbumThumbnails(
     req = req.query({ shareKey, sharePassword })
   }
 
-  return req.get().json<AlbumWithThumbnails>()
+  const data = await req.get().json<unknown>()
+  return albumWithThumbnailsSchema.parse(data)
 }
 
 /**
  * Create a new album
  */
 export async function createAlbum(input: CreateAlbumInput): Promise<Album> {
-  return apiWithCsrf
-    .url("/albums")
-    .post(input)
-    .json<Album>()
+  const data = await apiWithCsrf.url("/albums").post(input).json<unknown>()
+  return albumSchema.parse(data)
 }
 
 /**

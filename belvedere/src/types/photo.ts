@@ -1,23 +1,28 @@
-export interface PhotoBlur {
-  id: string
-  title?: string
-  description?: string
-  fileName: string
-  blurHash: string
-  width: number
-  height: number
-  mimeType: string
-  createdAt: string
-}
+import { z } from "zod"
 
-export interface PhotoThumbnail extends PhotoBlur {
-  fileSize: number
-  make?: string
-  model?: string
-  exposureTime?: number
-  fNumber?: number
-  iso?: number
-  city?: string
-  isLivePhoto: boolean
-  thumbnailUrl: string
-}
+export const photoBlurSchema = z.object({
+  id: z.string(),
+  title: z.string().optional(),
+  description: z.string().optional(),
+  fileName: z.string(),
+  blurHash: z.string(),
+  width: z.number(),
+  height: z.number(),
+  mimeType: z.string(),
+  createdAt: z.string(),
+})
+
+export const photoThumbnailSchema = photoBlurSchema.extend({
+  fileSize: z.number(),
+  make: z.string().optional(),
+  model: z.string().optional(),
+  exposureTime: z.number().optional(),
+  fNumber: z.number().optional(),
+  iso: z.number().optional(),
+  city: z.string().optional(),
+  isLivePhoto: z.boolean(),
+  thumbnailUrl: z.string(),
+})
+
+export type PhotoBlur = z.infer<typeof photoBlurSchema>
+export type PhotoThumbnail = z.infer<typeof photoThumbnailSchema>
