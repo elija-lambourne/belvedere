@@ -101,7 +101,6 @@ public class AuthController(IAntiforgery antiforgery) : ControllerBase
             Roles = User.FindAll(ClaimTypes.Role).Select(c => c.Value).ToList()
         });
     }
-
     
     /// <summary>
     ///     Provides the CSRF token to the frontend.
