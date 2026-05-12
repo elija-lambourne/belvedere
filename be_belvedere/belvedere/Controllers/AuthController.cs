@@ -102,6 +102,7 @@ public class AuthController(IAntiforgery antiforgery) : ControllerBase
         });
     }
 
+    
     /// <summary>
     ///     Provides the CSRF token to the frontend.
     /// </summary>
