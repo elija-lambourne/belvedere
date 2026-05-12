@@ -1,6 +1,6 @@
 import * as React from "react"
 
-import type { UserProfile } from "@/features/auth/types"
+import type { UserProfile } from "src/features/auth/types"
 
 type AuthContextValue = {
   user: UserProfile | null

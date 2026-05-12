@@ -4,49 +4,8 @@
  * Provides methods for album-related API calls
  */
 
-import { apiWithCsrf } from "@/lib/wretch"
+import { apiWithCsrf } from "@/lib/axios.ts"
 
-export interface Album {
-  id: string
-  title: string
-  description?: string
-  coverPhotoId?: string
-  isPublic: boolean
-  createdAt: string
-  photoCount: number
-}
-
-export interface PhotoBlur {
-  id: string
-  title?: string
-  description?: string
-  fileName: string
-  blurHash: string
-  width: number
-  height: number
-  mimeType: string
-  createdAt: string
-}
-
-export interface PhotoThumbnail extends PhotoBlur {
-  fileSize: number
-  make?: string
-  model?: string
-  exposureTime?: number
-  fNumber?: number
-  iso?: number
-  city?: string
-  isLivePhoto: boolean
-  thumbnailUrl: string
-}
-
-export interface AlbumExtended extends Album {
-  photos: PhotoBlur[]
-}
-
-export interface AlbumWithThumbnails extends Album {
-  photos: PhotoThumbnail[]
-}
 
 export interface CreateAlbumInput {
   title: string

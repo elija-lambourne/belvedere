@@ -1,11 +1,19 @@
-import axios, { AxiosError, type InternalAxiosRequestConfig } from "axios"
+import axios from "axios"
+import type { AxiosInstance } from "axios"
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "/api"
-const CSRF_COOKIE_NAMES = ["XSRF-TOKEN", "CSRF-TOKEN", "__RequestVerificationToken"]
-const CSRF_HEADER_NAME = "RequestVerificationToken"
+const CSRF_COOKIE_NAMES = ["XSRF-TOKEN", "CSRF-TOKEN"]
+const CSRF_HEADER_NAME = "X-XSRF-TOKEN"
 const SAFE_METHODS = new Set(["get", "head", "options", "trace"])
 
-function readCookie(name: string) {
+type QueryParams = Record<string, unknown>
+
+type StatusLikeError = {
+  status?: unknown
+  response?: { status?: unknown }
+}
+
+function readCookie(name: string): string | undefined {
   if (typeof document === "undefined") {
     return undefined
   }
@@ -18,45 +26,119 @@ function readCookie(name: string) {
   return cookie ? decodeURIComponent(cookie.slice(name.length + 1)) : undefined
 }
 
-function getCsrfToken() {
-  for (const cookieName of CSRF_COOKIE_NAMES) {
-    const value = readCookie(cookieName)
+function getCsrfToken(): string | undefined {
+  for (const name of CSRF_COOKIE_NAMES) {
+    const value = readCookie(name)
     if (value) {
       return value
     }
   }
 
-  const metaToken = document
-    .querySelector<HTMLMetaElement>('meta[name="csrf-token"]')
-    ?.getAttribute("content")
-
-  return metaToken ?? undefined
+  return undefined
 }
 
-export const api = axios.create({
-  baseURL: API_BASE_URL,
-  withCredentials: true,
-  headers: {
-    "X-Requested-With": "XMLHttpRequest",
-  },
-})
+function createAxiosInstance(withCsrf = false): AxiosInstance {
+  const instance = axios.create({
+    baseURL: API_BASE_URL,
+    withCredentials: true,
+    headers: {
+      "X-Requested-With": "XMLHttpRequest",
+    },
+  })
 
-api.interceptors.request.use((config: InternalAxiosRequestConfig) => {
-  const method = (config.method ?? "get").toLowerCase()
+  if (withCsrf) {
+    instance.interceptors.request.use((config) => {
+      const method = (config.method || "get").toLowerCase()
 
-  if (!SAFE_METHODS.has(method)) {
-    const csrfToken = getCsrfToken()
-    if (csrfToken) {
-      config.headers.set(CSRF_HEADER_NAME, csrfToken)
-    }
+      if (!SAFE_METHODS.has(method)) {
+        const token = getCsrfToken()
+        if (token) {
+          const headers = axios.AxiosHeaders.from(config.headers ?? {})
+          headers.set(CSRF_HEADER_NAME, token)
+          config.headers = headers
+        }
+      }
+
+      return config
+    })
   }
 
-  return config
-})
-
-export function isUnauthorizedError(error: unknown) {
-  return axios.isAxiosError(error) && error.response?.status === 401
+  return instance
 }
 
-export type { AxiosError }
+export const api = createAxiosInstance(false)
+const apiWithCsrfClient = createAxiosInstance(true)
 
+function isStatusLikeError(error: unknown): error is StatusLikeError {
+  return typeof error === "object" && error !== null
+}
+
+function getStatusFromError(error: unknown): number | undefined {
+  if (axios.isAxiosError(error)) {
+    return error.response?.status
+  }
+
+  if (!isStatusLikeError(error)) {
+    return undefined
+  }
+
+  if (typeof error.status === "number") {
+    return error.status
+  }
+  if (error.response && typeof error.response.status === "number") {
+    return error.response.status
+  }
+
+  return undefined
+}
+
+function makeChain(path: string) {
+  let query: QueryParams | undefined
+
+  return {
+    query(q: QueryParams | undefined) {
+      query = q
+      return this
+    },
+    get() {
+      const promise = apiWithCsrfClient.get(path, { params: query })
+      return {
+        json: async <T>() => (await promise).data as T,
+        res: async () => await promise,
+      }
+    },
+    post(body?: unknown) {
+      const promise = apiWithCsrfClient.post(path, body, {
+        params: query,
+      })
+      return {
+        json: async <T>() => (await promise).data as T,
+        res: async () => await promise,
+      }
+    },
+    delete() {
+      const promise = apiWithCsrfClient.delete(path, { params: query })
+      return {
+        res: async () => await promise,
+      }
+    },
+  }
+}
+
+export const apiWithCsrf = {
+  url(path: string) {
+    return makeChain(path)
+  },
+}
+
+export function isUnauthorizedError(error: unknown): boolean {
+  return getStatusFromError(error) === 401
+}
+
+export function isGoneError(error: unknown): boolean {
+  return getStatusFromError(error) === 410
+}
+
+export function isNotFoundError(error: unknown): boolean {
+  return getStatusFromError(error) === 404
+}

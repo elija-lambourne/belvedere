@@ -4,8 +4,7 @@
  * Provides methods for share link creation and resolution
  */
 
-import { apiWithCsrf } from "@/lib/wretch"
-import wretch from "wretch"
+import { apiWithCsrf, api } from "../../lib/axios"
 
 export type ResourceType = "photo" | "album"
 
@@ -48,12 +47,10 @@ export async function resolveShare(
   shareKey: string,
   password?: string
 ): Promise<ShareResolution> {
-  let req = wretch("/api").url(`/shares/${shareKey}`)
+  const resp = await api.get(`/shares/${shareKey}`, {
+    params: password ? { password } : undefined,
+  })
 
-  if (password) {
-    req = req.query({ password })
-  }
-
-  return req.get().json<ShareResolution>()
+  return resp.data as ShareResolution
 }
 

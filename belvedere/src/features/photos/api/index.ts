@@ -4,7 +4,7 @@
  * Provides methods for photo-related API calls
  */
 
-import { apiWithCsrf } from "@/lib/wretch"
+import { apiWithCsrf } from "../../../lib/axios"
 
 export interface PhotoMetadata {
   id: string

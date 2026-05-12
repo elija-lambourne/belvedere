@@ -2,8 +2,8 @@ import * as React from "react"
 import { useQuery } from "@tanstack/react-query"
 import { useLocation, useNavigate } from "react-router-dom"
 
-import { fetchCurrentUser, fetchCsrfToken } from "@/features/auth"
-import { isUnauthorizedError } from "@/lib/wretch"
+import { fetchCurrentUser, fetchCsrfToken } from "src/features/auth"
+import { isUnauthorizedError } from "../../lib/axios"
 import { AuthContext } from "./auth-context"
 import type { AuthContextValue } from "./auth-context"
 

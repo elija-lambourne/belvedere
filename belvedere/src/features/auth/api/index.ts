@@ -4,7 +4,7 @@
  * Provides methods for authentication-related API calls using wretch
  */
 
-import { apiWithCsrf } from "@/lib/wretch"
+import { apiWithCsrf } from "../../../lib/axios"
 import type { UserProfile } from "../types"
 
 /**

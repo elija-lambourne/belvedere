@@ -1,6 +1,6 @@
 import * as React from "react"
 
-import { AuthProvider } from "./auth"
+import { AuthProvider } from "./auth/auth"
 import { QueryClientProvider } from "./query-client-provider"
 import { ThemeProvider } from "./theme"
 

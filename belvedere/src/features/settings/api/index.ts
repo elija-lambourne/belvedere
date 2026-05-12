@@ -2,7 +2,7 @@
  * Settings API Client (Wretch Implementation)
  */
 
-import { apiWithCsrf } from "@/lib/wretch"
+import { apiWithCsrf } from "../../../lib/axios"
 
 export async function getSettings() {
   return apiWithCsrf
