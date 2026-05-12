@@ -2,14 +2,20 @@ import * as React from "react"
 import { useQuery } from "@tanstack/react-query"
 import { useLocation, useNavigate } from "react-router-dom"
 
-import { fetchCurrentUser } from "@/features/auth"
-import { isUnauthorizedError } from "@/lib/axios"
+import { fetchCurrentUser, fetchCsrfToken } from "@/features/auth"
+import { isUnauthorizedError } from "@/lib/wretch"
 import { AuthContext } from "./auth-context"
 import type { AuthContextValue } from "./auth-context"
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const navigate = useNavigate()
   const location = useLocation()
+
+  // Initialize CSRF token on mount
+  React.useEffect(() => {
+    fetchCsrfToken().catch(console.error)
+  }, [])
+
   const userQuery = useQuery({
     queryKey: ["auth", "current-user"],
     queryFn: fetchCurrentUser,

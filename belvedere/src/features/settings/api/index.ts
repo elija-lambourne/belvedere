@@ -1,7 +1,13 @@
-import { api } from "@/lib/axios"
+/**
+ * Settings API Client (Wretch Implementation)
+ */
+
+import { apiWithCsrf } from "@/lib/wretch"
 
 export async function getSettings() {
-  const { data } = await api.get<unknown>("/settings")
-  return data
+  return apiWithCsrf
+    .url("/settings")
+    .get()
+    .json<unknown>()
 }
 
