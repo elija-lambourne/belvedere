@@ -1,0 +1,18 @@
+﻿FROM mcr.microsoft.com/dotnet/sdk:10.0 AS migration
+
+WORKDIR /src
+
+# Copy the whole repo so the EF tools can build the project and execute migrations
+COPY . .
+
+# Install the EF global tool (use 10.x to match .NET 10)
+RUN dotnet tool install --global dotnet-ef --version 10.* \
+	&& export PATH="$PATH:/root/.dotnet/tools"
+
+# Restore and build the solution so migrations can be applied without relying on the host
+RUN dotnet restore belvedere.slnx \
+	&& dotnet build belvedere.slnx -c Release
+
+# Default entrypoint runs EF Core migrations for the belvedere project. Docker Compose
+# can override this entrypoint if desired.
+ENTRYPOINT ["dotnet", "ef", "database", "update", "--no-build", "--project", "belvedere", "--startup-project", "belvedere"]

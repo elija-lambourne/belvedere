@@ -39,6 +39,18 @@
     volumes:
       - ./belvedere/Logs:/app/Logs
 
+  migrations:
+    build:
+      context: .
+      dockerfile: Dockerfile.migrations
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      ASPNETCORE_ENVIRONMENT: ${ASPNETCORE_ENVIRONMENT:-Development}
+      ConnectionStrings__Postgres: Host=postgres;Port=5432;Database=${POSTGRES_DB:-belvedere};Username=${POSTGRES_USER:-belvedere};Password=${POSTGRES_PASSWORD:-belvedere}
+    restart: "no"
+
 volumes:
   postgres_data:
 
