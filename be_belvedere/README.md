@@ -19,10 +19,10 @@ after it finished setting up also run the migrations service
 ```bash
 docker compose up migrations
 ```
-Now you can run garage for the S3 service:
+Now you can run minio for the S3 service:
 
 ```bash
-docker compose up garage garage-ui
+docker compose up minio
 ```
 
 The stack starts:
