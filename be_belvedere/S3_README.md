@@ -1,8 +1,15 @@
 # Garage S3 Object Storage Setup
 
-This folder contains the Docker Compose configuration for running Garage, an S3-compatible object storage service for Belvedere.
+> [!NOTE]
+> **Docker services for Garage have been consolidated into `../be_belvedere/docker-compose.yml`**
+> 
+> The `garage` and `garage-ui` services now run on the unified `belvedere-network` alongside the PostgreSQL database, backend API, and migrations service.
+> To start all services including Garage, use `docker-compose up` from the `be_belvedere` directory.
+> See `../be_belvedere/.env.example` for complete environment variable configuration.
+
+This documentation provides reference information about Garage, an S3-compatible object storage service for Belvedere.
 > [!WARNING]
-> This documentation is AI generated (GPT-5.2 Codex). Take instructions with a grain of salt and *do NOT trust*
+> This documentation is AI generated (GPT-5.2 Codex). Take instructions with a grain of salt and **do NOT trust**
 > the instructions blindy. Human written and verified documentation will be released at a later date.
 
 ## Architecture

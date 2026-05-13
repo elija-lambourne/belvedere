@@ -1,4 +1,4 @@
-# Garage Configuration File
+﻿# Garage Configuration File
 # This file is optional and used if mounted to /etc/garage/config.toml
 
 [rpc_secret]
