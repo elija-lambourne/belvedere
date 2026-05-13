@@ -1,0 +1,25 @@
+# Garage Configuration File
+# This file is optional and used if mounted to /etc/garage/config.toml
+
+[rpc_secret]
+hex = "insecure_dev_secret_change_me_in_production"
+
+[s3_api]
+s3_region = "us-east-1"
+api_bind_addr = "[::]:3900"
+root_domain = ".s3.garage.local"
+
+[admin]
+admin_token = "dev_admin_token_change_me_in_production"
+admin_bind_addr = "[::]:3903"
+
+[metrics]
+metrics_enabled = true
+metrics_bind_addr = "[::]:3904"
+
+[db]
+db_engine = "sqlite:///data/data.db"
+
+[data_dir]
+data_dir = "/data"
+

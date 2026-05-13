@@ -1,0 +1,59 @@
+services:
+  garage:
+    image: dxkite/garage:latest
+    container_name: belvedere-garage
+    restart: unless-stopped
+    environment:
+      GARAGE_RPC_SECRET: ${GARAGE_RPC_SECRET:-insecure_dev_secret_change_me_in_production}
+      GARAGE_RPC_PUBLIC_ADDR: garage:3901
+      GARAGE_RPC_BIND_ADDR: 0.0.0.0:3901
+      GARAGE_S3_API_BIND_ADDR: 0.0.0.0:3900
+      GARAGE_S3_API_S3_REGION: us-east-1
+      GARAGE_ADMIN_API_BIND_ADDR: 0.0.0.0:3903
+      GARAGE_ADMIN_API_ADMIN_TOKEN: ${GARAGE_ADMIN_TOKEN:-dev_admin_token_change_me}
+      
+      GARAGE_METRICS_ENABLED: "true"
+      GARAGE_METRICS_BIND_ADDR: 0.0.0.0:3904
+    ports:
+      - '${GARAGE_S3_PORT:-3900}:3900'    # S3 API
+      - '${GARAGE_RPC_PORT:-3901}:3901'   # RPC (internal cluster communication)
+      - '${GARAGE_ADMIN_PORT:-3903}:3903' # Admin API
+      - '${GARAGE_METRICS_PORT:-3904}:3904' # Metrics
+    volumes:
+      - garage_data:/data
+      # Optional: custom Garage config file (if you want to use it)
+      - ./garage-config.toml:/etc/garage/config.toml:ro
+    healthcheck:
+      test: ['CMD', 'curl', '-f', 'http://localhost:3900']
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    networks:
+      - belvedere-network
+
+  # Optional: Garage web UI for admin management
+  garage-ui:
+    image: viergelinsoft/garage-ui:latest
+    container_name: belvedere-garage-ui
+    restart: unless-stopped
+    environment:
+      GARAGE_RPC_SECRET: ${GARAGE_RPC_SECRET:-insecure_dev_secret_change_me_in_production}
+      VITE_GARAGE_ADMIN_API_URL: http://garage:3903
+      VITE_GARAGE_ADMIN_TOKEN: ${GARAGE_ADMIN_TOKEN:-dev_admin_token_change_me}
+    ports:
+      - '${GARAGE_UI_PORT:-3905}:5173'
+    depends_on:
+      garage:
+        condition: service_healthy
+    networks:
+      - belvedere-network
+
+volumes:
+  garage_data:
+    driver: local
+
+networks:
+  belvedere-network:
+    driver: bridge
+
