@@ -4,35 +4,16 @@
  * Provides methods for photo-related API calls
  */
 
-import { apiWithCsrf } from "../../../lib/axios"
-
-export interface PhotoMetadata {
-  id: string
-  title?: string
-  description?: string
-  fileName: string
-  mimeType: string
-  width: number
-  height: number
-  fileSize: number
-  createdAt: string
-  capturedAt: string
-  make?: string
-  model?: string
-  exposureTime?: number
-  fNumber?: number
-  iso?: number
-  latitude?: number
-  longitude?: number
-  countryCode?: string
-  city?: string
-  isLivePhoto: boolean
-  reactions: Record<string, number>
-}
-
-export interface PhotoSignedUrl {
-  temporaryUrl: string
-}
+import { apiWithCsrf } from "@/lib/axios.ts"
+import {
+  type CreatePhotoRequest,
+  createPhotoResponse,
+  type CreatePhotoResponse,
+  type PhotoMetadata,
+  photoMetadataSchema,
+  photoSignedUrlResponse,
+  type PhotoSignedUrlResponse,
+} from "@/features/photos"
 
 /**
  * Get comprehensive metadata for a photo including EXIF data
@@ -49,7 +30,8 @@ export async function getPhotoMetadata(
     req = req.query({ shareKey, sharePassword })
   }
 
-  return req.get().json<PhotoMetadata>()
+  const res = req.get().json<PhotoMetadata>();
+  return photoMetadataSchema.parse(res);
 }
 
 /**
@@ -68,33 +50,15 @@ export async function getPhotoSignedUrl(
     req = req.query({ shareKey, sharePassword })
   }
 
-  const { temporaryUrl } = await req.get().json<PhotoSignedUrl>()
-  return temporaryUrl
-}
-
-export interface CreatePhotoInput {
-  file: File
-  title?: string
-  description?: string
-}
-
-export interface CreatePhotoResponse {
-  id: string
-  title?: string
-  fileName: string
-  mimeType: string
-  width: number
-  height: number
-  fileSize: number
-  createdAt: string
-  temporaryUrl: string
+  const res = await req.get().json<PhotoSignedUrlResponse>();
+  return photoSignedUrlResponse.parse(res).temporaryUrl;
 }
 
 /**
  * Upload a new photo
  * Currently returns 501 Not Implemented - pending full implementation
  */
-export async function uploadPhoto(input: CreatePhotoInput): Promise<CreatePhotoResponse> {
+export async function uploadPhoto(input: CreatePhotoRequest): Promise<CreatePhotoResponse> {
   const formData = new FormData()
   formData.append("file", input.file)
   if (input.title) {
@@ -104,8 +68,9 @@ export async function uploadPhoto(input: CreatePhotoInput): Promise<CreatePhotoR
     formData.append("description", input.description)
   }
 
-  return apiWithCsrf
+  const res = await apiWithCsrf
     .url("/photos")
     .post(formData)
-    .json<CreatePhotoResponse>()
+    .json<CreatePhotoResponse>();
+  return createPhotoResponse.parse(res);
 }

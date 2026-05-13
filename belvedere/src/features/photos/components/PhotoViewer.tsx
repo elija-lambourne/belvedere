@@ -1,12 +1,9 @@
-import { generateSignedUrl } from "../utils/generateSignedUrl"
-
 type PhotoViewerProps = {
   photoId: string
   alt: string
 }
 
 export function PhotoViewer({ photoId, alt }: PhotoViewerProps) {
-  const signedUrl = generateSignedUrl(photoId)
 
   return (
     <figure className="space-y-2 rounded-lg border bg-card p-4 text-card-foreground shadow-sm">
@@ -20,7 +17,7 @@ export function PhotoViewer({ photoId, alt }: PhotoViewerProps) {
       </div>
       <figcaption className="space-y-1 text-xs text-muted-foreground">
         <p>{alt}</p>
-        <p>Signed URL must come from the API: {signedUrl}</p>
+        <p>Signed URL must come from the API {photoId}</p>
       </figcaption>
     </figure>
   )

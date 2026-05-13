@@ -6,7 +6,7 @@ export {
   getAlbumThumbnails,
   listAlbums,
   removePhotoFromAlbum,
-} from "./api"
+} from "./api/albumRequests"
 export * from "./components"
 export * from "./hooks"
 export * from "./types"

@@ -5,7 +5,7 @@
  */
 
 import { apiWithCsrf } from "@/lib/axios.ts"
-import type { UserProfile } from "../types"
+import  { type UserProfile, userProfileSchema } from "@/features/auth"
 
 /**
  * Fetch CSRF token from backend
@@ -27,10 +27,11 @@ export async function fetchCsrfToken(): Promise<void> {
  * Returns 401 if user is not authenticated
  */
 export async function fetchCurrentUser(): Promise<UserProfile> {
-  return apiWithCsrf
+  const res = await apiWithCsrf
     .url("/auth/me")
     .get()
-    .json<UserProfile>()
+    .json<UserProfile>();
+  return userProfileSchema.parse(res);
 }
 
 /**

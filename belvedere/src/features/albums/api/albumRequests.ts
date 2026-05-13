@@ -14,13 +14,14 @@ import {
   type AlbumExtended,
   type AlbumWithThumbnails,
 } from "@/types"
+import z from "zod"
 
-
-export interface CreateAlbumInput {
-  title: string
-  description?: string
-  isPublic?: boolean
-}
+const createAlbumInputSchema = z.object({
+  title: z.string(),
+  description: z.string().optional(),
+  isPublic: z.boolean().optional(),
+});
+export type CreateAlbumInput = z.infer<typeof createAlbumInputSchema>;
 
 /**
  * Fetch all albums for the authenticated user
@@ -72,7 +73,12 @@ export async function getAlbumThumbnails(
  * Create a new album
  */
 export async function createAlbum(input: CreateAlbumInput): Promise<Album> {
-  const data = await apiWithCsrf.url("/albums").post(input).json<unknown>()
+  const parsedInput = createAlbumInputSchema.parse(input);
+
+  const data = await apiWithCsrf
+    .url("/albums")
+    .post(parsedInput)
+    .json<Album>();
   return albumSchema.parse(data)
 }
 
