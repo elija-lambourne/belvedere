@@ -2,10 +2,10 @@ import * as React from "react"
 import { useQuery } from "@tanstack/react-query"
 import { useLocation, useNavigate } from "react-router-dom"
 
-import { fetchCurrentUser, fetchCsrfToken } from "src/features/auth"
-import { isUnauthorizedError } from "../../lib/axios"
+import { isUnauthorizedError } from "@/lib/axios.ts"
 import { AuthContext } from "./auth-context"
 import type { AuthContextValue } from "./auth-context"
+import { fetchCsrfToken, fetchCurrentUser } from "@/features/auth"
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const navigate = useNavigate()

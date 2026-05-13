@@ -63,7 +63,7 @@ function createAxiosInstance(withCsrf = false): AxiosInstance {
     })
   }
 
-  return instance
+  return instance;
 }
 
 export const api = createAxiosInstance(false)

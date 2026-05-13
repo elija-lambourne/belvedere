@@ -64,7 +64,7 @@ export async function getAlbumThumbnails(
     req = req.query({ shareKey, sharePassword })
   }
 
-  const data = await req.get().json<unknown>()
+  const data = await req.get().json<AlbumWithThumbnails>()
   return albumWithThumbnailsSchema.parse(data)
 }
 
