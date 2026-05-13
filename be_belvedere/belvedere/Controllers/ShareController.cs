@@ -272,8 +272,7 @@ public sealed record CreateShareRequest(ResourceType TargetType, Guid TargetId, 
         {
             RuleFor(x => x.TargetType)
                 .NotEmpty()
-                .Must(value => value == ResourceType.Photo ||
-                               value == ResourceType.Album)
+                .Must(value => value is ResourceType.Photo or ResourceType.Album)
                                                     .WithMessage("TargetType must be either 'photo' or 'album'");
 
             RuleFor(x => x.TargetId)

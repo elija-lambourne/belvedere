@@ -7,18 +7,19 @@
 import { apiWithCsrf, api } from "@/lib/axios.ts"
 import { z } from "zod"
 
-// By defining the enum with Zod first, we get both the runtime validation
-// and the TypeScript type for free, ensuring they are always in sync.
 const ResourceTypeEnum = z.enum(['ALBUM', 'PHOTO']);
 export type ResourceType = z.infer<typeof ResourceTypeEnum>;
 
+export const createShareInputSchema = z.object({
+  targetType: ResourceTypeEnum,
+  targetId: z.uuid(),
+  password: z.string().max(256).nullable(),
+  expiresAt: z.iso.datetime().refine(val => new Date(val) > new Date(), {
+      message: "ExpiresAt must be in the future",
+  }).nullish(),
+});
 
-export interface CreateShareInput {
-  targetType: ResourceType
-  targetId: string
-  password?: string
-  expiresAt?: string // ISO 8601
-}
+export type CreateShareInput = z.infer<typeof createShareInputSchema>;
 
 const shareResponseSchema = z.object({
   shareKey: z.string(),

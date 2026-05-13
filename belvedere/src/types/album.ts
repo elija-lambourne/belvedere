@@ -6,8 +6,8 @@ import { photoBlurSchema, photoThumbnailSchema } from "./photo"
 export const albumSchema = z.object({
   id: z.string(),
   title: z.string(),
-  description: z.string().optional(),
-  coverPhotoId: z.string().optional(),
+  description: z.string().nullable(),
+  coverPhotoId: z.string().nullable(),
   isPublic: z.boolean(),
   createdAt: z.string(),
   photoCount: z.number(),

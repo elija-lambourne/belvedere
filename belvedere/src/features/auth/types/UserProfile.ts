@@ -3,9 +3,9 @@ import z from "zod"
 export const userProfileSchema = z.object({
   id: z.string(),
   displayName: z.string(),
-  email: z.string().optional(),
-  roles: z.array(z.string()).optional(),
-});
+  email: z.string().nullable(),
+  roles: z.array(z.string()).nullable(),
+})
 
 export type UserProfile = z.infer<typeof userProfileSchema>;
 

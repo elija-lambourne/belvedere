@@ -2,8 +2,8 @@ import { z } from "zod"
 
 export const photoBlurSchema = z.object({
   id: z.string(),
-  title: z.string().optional(),
-  description: z.string().optional(),
+  title: z.string().nullable(),
+  description: z.string().nullable(),
   fileName: z.string(),
   blurHash: z.string(),
   width: z.number(),
@@ -14,12 +14,12 @@ export const photoBlurSchema = z.object({
 
 export const photoThumbnailSchema = photoBlurSchema.extend({
   fileSize: z.number(),
-  make: z.string().optional(),
-  model: z.string().optional(),
-  exposureTime: z.number().optional(),
-  fNumber: z.number().optional(),
-  iso: z.number().optional(),
-  city: z.string().optional(),
+  make: z.string().nullable(),
+  model: z.string().nullable(),
+  exposureTime: z.number().nullable(),
+  fNumber: z.number().nullable(),
+  iso: z.number().nullable(),
+  city: z.string().nullable(),
   isLivePhoto: z.boolean(),
   thumbnailUrl: z.string(),
 })

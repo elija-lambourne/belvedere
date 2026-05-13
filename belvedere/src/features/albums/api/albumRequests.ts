@@ -18,9 +18,9 @@ import z from "zod"
 
 const createAlbumInputSchema = z.object({
   title: z.string(),
-  description: z.string().optional(),
-  isPublic: z.boolean().optional(),
-});
+  description: z.string().nullable(),
+  isPublic: z.boolean().nullable(),
+})
 export type CreateAlbumInput = z.infer<typeof createAlbumInputSchema>;
 
 /**
