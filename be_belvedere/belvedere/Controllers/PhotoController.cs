@@ -1,5 +1,6 @@
 ﻿using belvedere.Controllers.DTOs;
 using belvedere.Core.Services;
+using belvedere.Core.Util;
 using belvedere.Persistence.Model;
 using belvedere.Persistence.Util;
 using belvedere.Util;
@@ -7,6 +8,8 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using OneOf;
 using OneOf.Types;
+using SixLabors.ImageSharp;
+using SixLabors.ImageSharp.Processing;
 
 namespace belvedere.Controllers;
 
@@ -291,21 +294,135 @@ public sealed class PhotoController(
             return Unauthorized();
         }
 
-        // TODO: Implement photo upload logic
-        // 1. Validate file (size, type, etc.)
-        // 2. Extract EXIF metadata
-        // 3. Generate thumbnail with blurhash
-        // 4. Upload file and thumbnail to S3
-        // 5. Create Photo entity in database
-        // 6. Return CreatePhotoResponse with presigned URL
-        
-        logger.LogWarning("Photo upload endpoint not fully implemented yet. User {UserId} attempted upload of {FileName}",
-                         currentUser.Id, request.File.FileName);
-        
-        return StatusCode(StatusCodes.Status501NotImplemented, new
+        // 1. Basic validation already done above
+        // Read file into memory so we can both generate thumbnail/blurhash and upload
+        await using var fullStream = new MemoryStream();
+        await request.File.CopyToAsync(fullStream);
+        byte[] originalBytes = fullStream.ToArray();
+
+        // 2. Create a FormFile for the storage service to reuse existing SaveFileAsync logic
+        var originalFormFile = new FormFile(new MemoryStream(originalBytes), 0, originalBytes.Length, request.File.Name, request.File.FileName)
         {
-            error = "Photo upload endpoint not yet implemented",
-            detail = "The backend infrastructure for photo processing and storage needs to be configured"
-        });
+            Headers = request.File.Headers,
+            ContentType = request.File.ContentType
+        };
+
+        // 3. Upload original and extract metadata
+        var origMeta = await storageService.SaveFileAsync(originalFormFile, request.Title, request.Description);
+
+        // 4. Generate thumbnail and blurhash
+        using var image = SixLabors.ImageSharp.Image.Load<SixLabors.ImageSharp.PixelFormats.Rgba32>(originalBytes);
+        int thumbMax = 400;
+        var resizeOptions = new SixLabors.ImageSharp.Processing.ResizeOptions
+        {
+            Mode = SixLabors.ImageSharp.Processing.ResizeMode.Max,
+            Size = new SixLabors.ImageSharp.Size(thumbMax, thumbMax)
+        };
+        image.Mutate(x => x.Resize(resizeOptions));
+
+        // Compute blurhash from the resized image
+        string blurhash = BlurhashEncoder.Encode(image, 4, 3);
+
+        // Encode thumbnail to JPEG
+        await using var thumbStream = new MemoryStream();
+        var encoder = new SixLabors.ImageSharp.Formats.Jpeg.JpegEncoder { Quality = 75 };
+        await image.SaveAsJpegAsync(thumbStream, encoder);
+        byte[] thumbBytes = thumbStream.ToArray();
+
+        // 5. Upload thumbnail bytes
+        var thumbMeta = await storageService.SaveBytesAsync(thumbBytes, "thumb_" + request.File.FileName, "image/jpeg", null, null);
+
+        // 6. Persist Photo entity in DB
+        var photoEntity = new Photo
+        {
+            Id = Guid.NewGuid(),
+            UserId = currentUser.Id,
+            Title = request.Title,
+            FileName = origMeta.FileName,
+            Description = request.Description,
+            StorageKey = origMeta.StorageKey,
+            ThumbKey = thumbMeta.StorageKey,
+            BlurHash = blurhash,
+            MimeType = origMeta.MimeType,
+            Width = origMeta.Width,
+            Height = origMeta.Height,
+            FileSize = origMeta.FileSize,
+            CreatedAt = origMeta.CreatedAt,
+            CapturedAt = origMeta.CapturedAt,
+            Make = origMeta.Make,
+            Model = origMeta.Model,
+            ExposureTime = origMeta.ExposureTime ?? 0,
+            FNumber = origMeta.FNumber ?? 0,
+            Iso = origMeta.Iso ?? 0,
+            Latitude = origMeta.Latitude,
+            Longitude = origMeta.Longitude,
+            IsLivePhoto = origMeta.IsLivePhoto
+        };
+
+        await uow.PhotoRepository.AddPhotoAsync(photoEntity);
+        await uow.SaveChangesAsync();
+
+        // 7. Generate temporary URL for the created photo
+        string temporaryUrl = await storageService.GetPresignedUrlAsync(photoEntity.StorageKey, TimeSpan.FromMinutes(5));
+
+        // 8. Build DTOs
+        var photoDto = new PhotoDto
+        {
+            Id = photoEntity.Id,
+            Title = photoEntity.Title,
+            FileName = photoEntity.FileName,
+            Description = photoEntity.Description,
+            Width = photoEntity.Width,
+            Height = photoEntity.Height,
+            MimeType = photoEntity.MimeType,
+            CreatedAt = photoEntity.CreatedAt
+        };
+
+        var thumbnailDto = new PhotoThumbnailDto
+        {
+            Id = photoEntity.Id,
+            Title = photoEntity.Title,
+            FileName = photoEntity.FileName,
+            Description = photoEntity.Description,
+            Width = photoEntity.Width,
+            Height = photoEntity.Height,
+            MimeType = photoEntity.MimeType,
+            CreatedAt = photoEntity.CreatedAt,
+            FileSize = photoEntity.FileSize,
+            Make = photoEntity.Make,
+            Model = photoEntity.Model,
+            ExposureTime = photoEntity.ExposureTime,
+            FNumber = photoEntity.FNumber,
+            Iso = photoEntity.Iso,
+            City = photoEntity.City,
+            IsLivePhoto = photoEntity.IsLivePhoto,
+            ThumbnailUrl = await storageService.GetPresignedUrlAsync(photoEntity.ThumbKey, TimeSpan.FromMinutes(5))
+        };
+
+        var metadataDto = MapPhotoToMetadata(photoEntity);
+
+        var blurDto = new PhotoBlurDto
+        {
+            Id = photoEntity.Id,
+            Title = photoEntity.Title,
+            FileName = photoEntity.FileName,
+            Description = photoEntity.Description,
+            Width = photoEntity.Width,
+            Height = photoEntity.Height,
+            MimeType = photoEntity.MimeType,
+            CreatedAt = photoEntity.CreatedAt,
+            BlurHash = photoEntity.BlurHash
+        };
+
+        var createResponse = new CreatePhotoResponse
+        {
+            Photo = photoDto,
+            Thumbnail = thumbnailDto,
+            Metadata = metadataDto,
+            Blur = blurDto,
+            TemporaryUrl = temporaryUrl
+        };
+
+        return CreatedAtAction(nameof(GetPhotoMetadata), new { id = photoEntity.Id }, createResponse);
     }
 }

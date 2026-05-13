@@ -10,7 +10,7 @@
         <ProjectReference Include="..\belvedere\belvedere.csproj"/>
     </ItemGroup>
     <ItemGroup>
-        <PackageReference Include="coverlet.collector" Version="8.0.0">
+        <PackageReference Include="coverlet.collector" Version="10.0.0">
             <PrivateAssets>all</PrivateAssets>
             <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
         </PackageReference>
@@ -24,6 +24,7 @@
             <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
         </PackageReference>
         <PackageReference Include="Testcontainers.PostgreSql" Version="4.10.0" />
+        <PackageReference Update="NodaTime" Version="3.3.2" />
     </ItemGroup>
     <ItemGroup>
         <Using Include="AwesomeAssertions"/>

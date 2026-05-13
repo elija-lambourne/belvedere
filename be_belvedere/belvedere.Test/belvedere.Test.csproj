@@ -9,7 +9,7 @@
         <ProjectReference Include="..\belvedere.Core\belvedere.Core.csproj"/>
     </ItemGroup>
     <ItemGroup>
-        <PackageReference Include="coverlet.collector" Version="8.0.0">
+        <PackageReference Include="coverlet.collector" Version="10.0.0">
             <PrivateAssets>all</PrivateAssets>
             <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
         </PackageReference>
@@ -21,6 +21,7 @@
             <PrivateAssets>all</PrivateAssets>
             <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
         </PackageReference>
+        <PackageReference Update="NodaTime" Version="3.3.2" />
     </ItemGroup>
     <ItemGroup>
         <Using Include="AwesomeAssertions"/>

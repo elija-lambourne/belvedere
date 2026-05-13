@@ -226,44 +226,24 @@ public sealed class CreatePhotoRequest
 public sealed class CreatePhotoResponse
 {
     /// <summary>
-    /// The unique identifier of the newly created photo.
+    /// Basic photo DTO
     /// </summary>
-    public required Guid Id { get; init; }
+    public required PhotoDto Photo { get; init; }
 
     /// <summary>
-    /// The title of the photo (may be null).
+    /// Thumbnail DTO
     /// </summary>
-    public string? Title { get; init; }
+    public required PhotoThumbnailDto Thumbnail { get; init; }
 
     /// <summary>
-    /// The original filename of the uploaded photo.
+    /// Full metadata DTO
     /// </summary>
-    public required string FileName { get; init; }
+    public required PhotoMetaDataDto Metadata { get; init; }
 
     /// <summary>
-    /// The MIME type of the photo file.
+    /// Blur DTO (contains blurhash)
     /// </summary>
-    public required string MimeType { get; init; }
-
-    /// <summary>
-    /// The width of the photo in pixels.
-    /// </summary>
-    public int Width { get; init; }
-
-    /// <summary>
-    /// The height of the photo in pixels.
-    /// </summary>
-    public int Height { get; init; }
-
-    /// <summary>
-    /// The size of the original file in bytes.
-    /// </summary>
-    public long FileSize { get; init; }
-
-    /// <summary>
-    /// The date and time when the photo was created/uploaded.
-    /// </summary>
-    public DateTime CreatedAt { get; init; }
+    public required PhotoBlurDto Blur { get; init; }
 
     /// <summary>
     /// A temporary presigned URL for accessing the photo (valid for 5 minutes).

@@ -1,8 +1,17 @@
-﻿using belvedere.Core.Util;
-using System.Globalization;
-using System.Security.Cryptography;
-using System.Text;
+﻿using System;
+using System.IO;
+using System.Linq;
+using System.Collections.Generic;
+using belvedere.Core.Util;
+using Amazon.S3;
+using Amazon.S3.Model;
+using MetadataExtractor;
+using MetadataExtractor.Formats.Exif;
+using MetadataExtractor.Formats.Jpeg;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Options;
+using Microsoft.Extensions.Logging;
+using Directory = MetadataExtractor.Directory;
 
 namespace belvedere.Core.Services;
 
@@ -25,35 +34,92 @@ public interface IStorageService
     /// without exposing permanent credentials. After expiration, the URL becomes invalid.
     /// </remarks>
     public ValueTask<string> GetPresignedUrlAsync(string storageKey, TimeSpan expires);
+
+    public ValueTask<FileMetadata> SaveFileAsync(IFormFile file, string? title, string? description);
+
+    /// <summary>
+    /// Saves a byte array as a file to storage and returns metadata.
+    /// </summary>
+    public ValueTask<FileMetadata> SaveBytesAsync(byte[] data, string fileName, string contentType, string? title, string? description);
+
+    public sealed record FileMetadata(
+        string StorageKey,
+        string FileName,
+        long FileSize,
+        string MimeType,
+        int Width,
+        int Height,
+        DateTime CreatedAt,
+        DateTime CapturedAt,
+        string? Make,
+        string? Model,
+        double? ExposureTime,
+        double? FNumber,
+        int? Iso,
+        double? Latitude,
+        double? Longitude,
+        bool IsLivePhoto);
 }
 
 /// <summary>
-/// Implementation of presigned URL generation for AWS S3-compatible storage services.
+/// Implementation of cloud storage operations using AWS S3 SDK.
 /// </summary>
 /// <remarks>
-/// Implements AWS Signature Version 4 signing process to generate presigned URLs.
-/// Compatible with AWS S3 and S3-compatible services like MinIO.
+/// Uses Amazon.S3 SDK for presigned URL generation and file uploads.
+/// Compatible with AWS S3 and S3-compatible services like MinIO and Garage.
 /// </remarks>
-internal sealed class S3StorageService(IOptions<StorageSettings> settings, ILogger<S3StorageService> logger) : IStorageService
+internal sealed class S3StorageService : IStorageService
 {
+    private readonly StorageSettings _settings;
+    private readonly IAmazonS3 _s3Client;
+    private readonly ILogger<S3StorageService> _logger;
+
+    public S3StorageService(IOptions<StorageSettings> settings, ILogger<S3StorageService> logger)
+    {
+        _settings = settings.Value;
+        _logger = logger;
+        _s3Client = CreateS3Client();
+    }
+
+    /// <summary>
+    /// Creates and configures an S3 client based on StorageSettings.
+    /// </summary>
+    /// <returns>A configured IAmazonS3 client instance.</returns>
+    /// <remarks>
+    /// Configures the client with custom endpoint URL if provided (for S3-compatible services).
+    /// Uses the configured access key and secret key from settings.
+    /// </remarks>
+    private IAmazonS3 CreateS3Client()
+    {
+        string accessKey = _settings.AccessKey ?? throw new InvalidOperationException("Storage:AccessKey must be configured");
+        string secretKey = _settings.SecretKey ?? throw new InvalidOperationException("Storage:SecretKey must be configured");
+
+        var credentials = new Amazon.Runtime.BasicAWSCredentials(accessKey, secretKey);
+        
+        var s3Config = new AmazonS3Config
+        {
+            RegionEndpoint = Amazon.RegionEndpoint.GetBySystemName(_settings.Region ?? "us-east-1"),
+            ForcePathStyle = _settings.ForcePathStyle
+        };
+
+        // If a custom service URL is provided (for S3-compatible services), configure it
+        if (!string.IsNullOrEmpty(_settings.ServiceUrl))
+        {
+            s3Config.ServiceURL = _settings.ServiceUrl;
+        }
+
+        return new AmazonS3Client(credentials, s3Config);
+    }
+
     /// <summary>
     /// Generates a presigned URL for accessing a stored object in S3.
     /// </summary>
     /// <param name="storageKey">The key/path of the object in S3 bucket (e.g., "photos/image123.jpg").</param>
     /// <param name="expires">The duration for which the URL remains valid.</param>
-    /// <returns>A complete presigned URL with AWS signature that grants temporary access to the object.</returns>
+    /// <returns>A complete presigned URL that grants temporary access to the object.</returns>
     /// <remarks>
-    /// Uses AWS Signature Version 4 to sign the request. The generated URL includes:
-    /// - Access credentials scoped to the S3 service and specific region
-    /// - Expiration timestamp
-    /// - Cryptographic signature preventing tampering
-    /// 
-    /// The URL format depends on the storage configuration:
-    /// - Path-style: https://s3.example.com/bucket/key
-    /// - Virtual-hosted-style: https://bucket.s3.example.com/key
-    /// 
-    /// Configuration is read from StorageSettings including service URL, bucket name,
-    /// access key, secret key, and region.
+    /// The presigned URL includes AWS Signature Version 4 signature and is valid for the specified duration.
+    /// After expiration, the URL becomes invalid and cannot be used to access the object.
     /// </remarks>
     /// <exception cref="ArgumentException">Thrown when storageKey is null, empty, or whitespace.</exception>
     /// <exception cref="ArgumentOutOfRangeException">Thrown when expires is less than or equal to zero.</exception>
@@ -70,162 +136,245 @@ internal sealed class S3StorageService(IOptions<StorageSettings> settings, ILogg
             throw new ArgumentOutOfRangeException(nameof(expires), "Expiration must be positive");
         }
 
-        StorageSettings storageSettings = settings.Value;
-        string serviceUrl = storageSettings.ServiceUrl ?? throw new InvalidOperationException("Storage:ServiceUrl must be configured");
-        string bucketName = storageSettings.BucketName ?? throw new InvalidOperationException("Storage:BucketName must be configured");
-        string accessKey = storageSettings.AccessKey ?? throw new InvalidOperationException("Storage:AccessKey must be configured");
-        string secretKey = storageSettings.SecretKey ?? throw new InvalidOperationException("Storage:SecretKey must be configured");
-        string region = string.IsNullOrWhiteSpace(storageSettings.Region) ? "us-east-1" : storageSettings.Region;
+        string bucketName = _settings.BucketName ?? throw new InvalidOperationException("Storage:BucketName must be configured");
 
-        Uri baseUri = new(serviceUrl, UriKind.Absolute);
-        string host = baseUri.Host;
-        int? port = baseUri.IsDefaultPort ? null : baseUri.Port;
-
-        string canonicalUri = storageSettings.ForcePathStyle
-            ? $"/{EscapeSegment(bucketName)}/{BuildEscapedPath(storageKey)}"
-            : $"/{BuildEscapedPath(storageKey)}";
-
-        string requestHost = storageSettings.ForcePathStyle
-            ? BuildHost(host, port)
-            : BuildHost($"{bucketName}.{host}", port);
-
-        string amzDate = DateTime.UtcNow.ToString("yyyyMMddTHHmmssZ", CultureInfo.InvariantCulture);
-        string dateStamp = DateTime.UtcNow.ToString("yyyyMMdd", CultureInfo.InvariantCulture);
-        string credentialScope = $"{dateStamp}/{region}/s3/aws4_request";
-
-        var query = new SortedDictionary<string, string>(StringComparer.Ordinal)
+        var request = new GetPreSignedUrlRequest
         {
-            ["X-Amz-Algorithm"] = "AWS4-HMAC-SHA256",
-            ["X-Amz-Credential"] = Uri.EscapeDataString($"{accessKey}/{credentialScope}"),
-            ["X-Amz-Date"] = amzDate,
-            ["X-Amz-Expires"] = ((int)expires.TotalSeconds).ToString(CultureInfo.InvariantCulture),
-            ["X-Amz-SignedHeaders"] = "host"
+            BucketName = bucketName,
+            Key = storageKey,
+            Expires = DateTime.UtcNow.AddSeconds(expires.TotalSeconds),
+            Verb = HttpVerb.GET
         };
 
-        string canonicalQueryString = string.Join("&", query.Select(pair => $"{pair.Key}={pair.Value}"));
-        string canonicalHeaders = $"host:{requestHost}\n";
-        const string signedHeaders = "host";
-        const string payloadHash = "UNSIGNED-PAYLOAD";
-
-        string canonicalRequest = string.Join("\n",
-            "GET",
-            canonicalUri,
-            canonicalQueryString,
-            canonicalHeaders,
-            signedHeaders,
-            payloadHash);
-
-        string stringToSign = string.Join("\n",
-            "AWS4-HMAC-SHA256",
-            amzDate,
-            credentialScope,
-            HashHex(canonicalRequest));
-
-        byte[] signingKey = GetSigningKey(secretKey, dateStamp, region, "s3");
-        string signature = ToHex(HmacSha256(signingKey, stringToSign));
-
-        string finalQuery = string.Join("&", query.Select(pair => $"{pair.Key}={pair.Value}")) + $"&X-Amz-Signature={signature}";
-        string finalBase = $"{baseUri.Scheme}://{requestHost}";
-
-        string url = $"{finalBase}{canonicalUri}?{finalQuery}";
-        logger.LogDebug("Generated presigned URL for key {StorageKey}", storageKey);
+        string url = _s3Client.GetPreSignedURL(request);
+        _logger.LogDebug("Generated presigned URL for key {StorageKey}", storageKey);
 
         return ValueTask.FromResult(url);
     }
 
     /// <summary>
-    /// Constructs a host string from hostname and optional port number.
+    /// Saves a file to S3 storage.
     /// </summary>
-    /// <param name="host">The hostname.</param>
-    /// <param name="port">The optional port number.</param>
-    /// <returns>A host string in the format "host" or "host:port".</returns>
+    /// <param name="file">The file to upload.</param>
+    /// <param name="title">Optional title/metadata for the file.</param>
+    /// <param name="description">Optional description/metadata for the file.</param>
+    /// <returns>FileMetadata containing information about the uploaded file.</returns>
     /// <remarks>
-    /// If port is null, only the hostname is used. Otherwise, the port is appended with a colon separator.
+    /// Uploads the file to S3 using the bucket configured in StorageSettings.
+    /// The storage key is derived from the file name.
     /// </remarks>
-    private static string BuildHost(string host, int? port) => port is null ? host : $"{host}:{port}";
-
-    /// <summary>
-    /// Constructs a URL path with properly URI-escaped segments.
-    /// </summary>
-    /// <param name="key">The storage key/path (e.g., "folder/subfolder/file").</param>
-    /// <returns>A properly escaped URL path.</returns>
-    /// <remarks>
-    /// Splits the key by '/' and escapes each segment individually to ensure proper URL encoding
-    /// of special characters while preserving the path structure.
-    /// </remarks>
-    private static string BuildEscapedPath(string key) => string.Join('/', key.Split('/', StringSplitOptions.RemoveEmptyEntries).Select(EscapeSegment));
-
-    /// <summary>
-    /// URI-escapes a single path segment.
-    /// </summary>
-    /// <param name="segment">The path segment to escape.</param>
-    /// <returns>The URI-escaped segment.</returns>
-    /// <remarks>
-    /// Uses library standard URI data string escaping to ensure special characters are properly encoded.
-    /// </remarks>
-    private static string EscapeSegment(string segment) => Uri.EscapeDataString(segment);
-
-    /// <summary>
-    /// Derives the AWS Signature Version 4 signing key from the secret access key.
-    /// </summary>
-    /// <param name="secretKey">The AWS secret access key.</param>
-    /// <param name="dateStamp">The date stamp in yyyyMMdd format.</param>
-    /// <param name="regionName">The AWS region name (e.g., "us-east-1").</param>
-    /// <param name="serviceName">The service name, typically "s3".</param>
-    /// <returns>The derived signing key as bytes.</returns>
-    /// <remarks>
-    /// Implements the HMAC-SHA256 key derivation process required for AWS Signature Version 4.
-    /// The process applies HMAC-SHA256 iteratively:
-    /// 1. kSecret = HMAC-SHA256("AWS4" + secretKey, dateStamp)
-    /// 2. kRegion = HMAC-SHA256(kSecret, regionName)
-    /// 3. kService = HMAC-SHA256(kRegion, serviceName)
-    /// 4. kSigning = HMAC-SHA256(kService, "aws4_request")
-    /// </remarks>
-    private static byte[] GetSigningKey(string secretKey, string dateStamp, string regionName, string serviceName)
+    /// <exception cref="ArgumentNullException">Thrown when file is null.</exception>
+    /// <exception cref="InvalidOperationException">Thrown when required storage settings are not configured.</exception>
+    public async ValueTask<IStorageService.FileMetadata> SaveFileAsync(IFormFile file, string? title, string? description)
     {
-        byte[] kSecret = Encoding.UTF8.GetBytes($"AWS4{secretKey}");
-        byte[] kDate = HmacSha256(kSecret, dateStamp);
-        byte[] kRegion = HmacSha256(kDate, regionName);
-        byte[] kService = HmacSha256(kRegion, serviceName);
-        return HmacSha256(kService, "aws4_request");
+        if (file == null)
+        {
+            throw new ArgumentNullException(nameof(file));
+        }
+
+        string bucketName = _settings.BucketName ?? throw new InvalidOperationException("Storage:BucketName must be configured");
+
+        string safeFileName = Path.GetFileName(file.FileName);
+        string extension = Path.GetExtension(safeFileName);
+        string storageKey = $"photos/{DateTime.UtcNow:yyyy/MM}/{Guid.NewGuid():N}{extension}";
+        string mimeType = string.IsNullOrWhiteSpace(file.ContentType) ? "application/octet-stream" : file.ContentType;
+        DateTime createdAt = DateTime.UtcNow;
+
+        try
+        {
+            await using var memoryStream = new MemoryStream();
+            await file.CopyToAsync(memoryStream);
+
+            var extracted = ExtractMetadata(memoryStream, createdAt);
+
+            memoryStream.Position = 0;
+            var putRequest = new PutObjectRequest
+            {
+                BucketName = bucketName,
+                Key = storageKey,
+                InputStream = memoryStream,
+                ContentType = mimeType
+            };
+
+            if (!string.IsNullOrWhiteSpace(title))
+            {
+                putRequest.Metadata["title"] = title;
+            }
+
+            if (!string.IsNullOrWhiteSpace(description))
+            {
+                putRequest.Metadata["description"] = description;
+            }
+
+            await _s3Client.PutObjectAsync(putRequest);
+            _logger.LogInformation("File uploaded successfully to S3. StorageKey: {StorageKey}, Size: {FileSize}", storageKey, file.Length);
+
+            return new IStorageService.FileMetadata(
+                StorageKey: storageKey,
+                FileName: safeFileName,
+                FileSize: file.Length,
+                MimeType: mimeType,
+                Width: extracted.Width,
+                Height: extracted.Height,
+                CreatedAt: createdAt,
+                CapturedAt: extracted.CapturedAt,
+                Make: extracted.Make,
+                Model: extracted.Model,
+                ExposureTime: extracted.ExposureTime,
+                FNumber: extracted.FNumber,
+                Iso: extracted.Iso,
+                Latitude: extracted.Latitude,
+                Longitude: extracted.Longitude,
+                IsLivePhoto: false);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to upload file to S3. FileName: {FileName}, StorageKey: {StorageKey}", file.FileName, storageKey);
+            throw;
+        }
     }
 
-    /// <summary>
-    /// Computes HMAC-SHA256 hash of data using the specified key.
-    /// </summary>
-    /// <param name="key">The HMAC key as bytes.</param>
-    /// <param name="data">The data to hash as a string.</param>
-    /// <returns>The computed HMAC-SHA256 hash as bytes.</returns>
-    /// <remarks>
-    /// Uses the standard HMACSHA256 algorithm from System.Security.Cryptography.
-    /// The data is encoded to UTF-8 before hashing.
-    /// </remarks>
-    private static byte[] HmacSha256(byte[] key, string data)
+    public async ValueTask<IStorageService.FileMetadata> SaveBytesAsync(byte[] data, string fileName, string contentType, string? title, string? description)
     {
-        using var hmac = new HMACSHA256(key);
-        return hmac.ComputeHash(Encoding.UTF8.GetBytes(data));
+        if (data is null) throw new ArgumentNullException(nameof(data));
+        if (string.IsNullOrWhiteSpace(fileName)) throw new ArgumentException("fileName is required", nameof(fileName));
+
+        string bucketName = _settings.BucketName ?? throw new InvalidOperationException("Storage:BucketName must be configured");
+
+        string extension = Path.GetExtension(fileName);
+        string storageKey = $"photos/{DateTime.UtcNow:yyyy/MM}/{Guid.NewGuid():N}{extension}";
+
+        try
+        {
+            await using var ms = new MemoryStream(data);
+            var putRequest = new PutObjectRequest
+            {
+                BucketName = bucketName,
+                Key = storageKey,
+                InputStream = ms,
+                ContentType = contentType
+            };
+
+            if (!string.IsNullOrWhiteSpace(title)) putRequest.Metadata["title"] = title;
+            if (!string.IsNullOrWhiteSpace(description)) putRequest.Metadata["description"] = description;
+
+            await _s3Client.PutObjectAsync(putRequest);
+            _logger.LogInformation("Bytes uploaded successfully to S3. StorageKey: {StorageKey}, Size: {FileSize}", storageKey, data.Length);
+
+            return new IStorageService.FileMetadata(
+                StorageKey: storageKey,
+                FileName: fileName,
+                FileSize: data.LongLength,
+                MimeType: contentType,
+                Width: 0,
+                Height: 0,
+                CreatedAt: DateTime.UtcNow,
+                CapturedAt: DateTime.UtcNow,
+                Make: null,
+                Model: null,
+                ExposureTime: null,
+                FNumber: null,
+                Iso: null,
+                Latitude: null,
+                Longitude: null,
+                IsLivePhoto: false);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to upload bytes to S3. FileName: {FileName}, StorageKey: {StorageKey}", fileName, storageKey);
+            throw;
+        }
     }
 
-    /// <summary>
-    /// Computes SHA256 hash of input string and returns it as a hexadecimal string.
-    /// </summary>
-    /// <param name="input">The input string to hash.</param>
-    /// <returns>The SHA256 hash as a lowercase hexadecimal string.</returns>
-    /// <remarks>
-    /// Encodes the input as UTF-8 before hashing, then converts the result to uppercase hex format
-    /// and converts to lowercase for consistency with AWS requirements.
-    /// </remarks>
-    private static string HashHex(string input) => ToHex(SHA256.HashData(Encoding.UTF8.GetBytes(input)));
+    private static ExtractedImageMetadata ExtractMetadata(Stream imageStream, DateTime fallbackCapturedAt)
+    {
+        imageStream.Position = 0;
 
-    /// <summary>
-    /// Converts a byte array to a lowercase hexadecimal string.
-    /// </summary>
-    /// <param name="data">The bytes to convert.</param>
-    /// <returns>A lowercase hexadecimal representation of the bytes.</returns>
-    /// <remarks>
-    /// Uses the built-in ToHexString method and converts the result to lowercase.
-    /// </remarks>
-    private static string ToHex(byte[] data) => Convert.ToHexString(data).ToLowerInvariant();
+        IReadOnlyList<Directory> directories = ImageMetadataReader.ReadMetadata(imageStream).ToList();
+
+        var ifd0 = directories.OfType<ExifIfd0Directory>().FirstOrDefault();
+        var subIfd = directories.OfType<ExifSubIfdDirectory>().FirstOrDefault();
+        var gps = directories.OfType<GpsDirectory>().FirstOrDefault();
+        var jpeg = directories.OfType<JpegDirectory>().FirstOrDefault();
+
+        int width = TryGetInt(jpeg, JpegDirectory.TagImageWidth)
+                    ?? TryGetInt(subIfd, ExifDirectoryBase.TagExifImageWidth)
+                    ?? TryGetInt(ifd0, ExifDirectoryBase.TagImageWidth)
+                    ?? 0;
+
+        int height = TryGetInt(jpeg, JpegDirectory.TagImageHeight)
+                     ?? TryGetInt(subIfd, ExifDirectoryBase.TagExifImageHeight)
+                     ?? TryGetInt(ifd0, ExifDirectoryBase.TagImageHeight)
+                     ?? 0;
+
+        DateTime capturedAt = TryGetDateTime(subIfd, ExifDirectoryBase.TagDateTimeOriginal)
+                              ?? TryGetDateTime(subIfd, ExifDirectoryBase.TagDateTimeDigitized)
+                              ?? TryGetDateTime(ifd0, ExifDirectoryBase.TagDateTime)
+                              ?? fallbackCapturedAt;
+
+        double? latitude = null;
+        double? longitude = null;
+        GeoLocation? location = gps?.GetGeoLocation();
+        if (location.HasValue)
+        {
+            latitude = location.Value.Latitude;
+            longitude = location.Value.Longitude;
+        }
+
+        return new ExtractedImageMetadata(
+            Width: width,
+            Height: height,
+            CapturedAt: capturedAt,
+            Make: ifd0?.GetDescription(ExifDirectoryBase.TagMake),
+            Model: ifd0?.GetDescription(ExifDirectoryBase.TagModel),
+            ExposureTime: TryGetRational(subIfd, ExifDirectoryBase.TagExposureTime),
+            FNumber: TryGetRational(subIfd, ExifDirectoryBase.TagFNumber),
+            Iso: TryGetInt(subIfd, ExifDirectoryBase.TagIsoEquivalent),
+            Latitude: latitude,
+            Longitude: longitude);
+    }
+
+    private static int? TryGetInt(Directory? directory, int tag)
+    {
+        if (directory is null)
+        {
+            return null;
+        }
+
+        return directory.TryGetInt32(tag, out int value) ? value : null;
+    }
+
+    private static double? TryGetRational(Directory? directory, int tag)
+    {
+        if (directory is null)
+        {
+            return null;
+        }
+
+        return directory.TryGetRational(tag, out Rational value) ? value.ToDouble() : null;
+    }
+
+    private static DateTime? TryGetDateTime(Directory? directory, int tag)
+    {
+        if (directory is null)
+        {
+            return null;
+        }
+
+        return directory.TryGetDateTime(tag, out DateTime value) ? value : null;
+    }
+
+    private sealed record ExtractedImageMetadata(
+        int Width,
+        int Height,
+        DateTime CapturedAt,
+        string? Make,
+        string? Model,
+        double? ExposureTime,
+        double? FNumber,
+        int? Iso,
+        double? Latitude,
+        double? Longitude);
 }
 
 

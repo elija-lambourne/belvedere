@@ -27,6 +27,11 @@ public interface IPhotoRepository
     /// <param name="id">The unique identifier of the photo to retrieve.</param>
     /// <returns>The photo with its Albums collection populated if found; otherwise null.</returns>
     public ValueTask<Photo?> GetPhotoByIdWithAlbumsAsync(Guid id);
+
+    /// <summary>
+    /// Adds a new photo to the underlying DbSet and returns the added entity.
+    /// </summary>
+    public ValueTask<Photo> AddPhotoAsync(Photo photo);
 }
 
 /// <summary>
@@ -60,5 +65,11 @@ public class PhotoRepository(DbSet<Photo> photos) : IPhotoRepository
         return await photos
             .Include(p => p.Albums)
             .FirstOrDefaultAsync(p => p.Id == id);
+    }
+
+    public async ValueTask<Photo> AddPhotoAsync(Photo photo)
+    {
+        var entry = await photos.AddAsync(photo);
+        return entry.Entity;
     }
 }
