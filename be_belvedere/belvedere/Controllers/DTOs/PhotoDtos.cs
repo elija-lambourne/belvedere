@@ -65,17 +65,6 @@ public record PhotoDto
 }
 
 /// <summary>
-///     Response model for a photo within an album context.
-/// </summary>
-public sealed record PhotoBlurDto : PhotoDto
-{
-    /// <summary>
-    ///     The blurhash of the photo (for placeholder rendering).
-    /// </summary>
-    public required string BlurHash { get; init; }
-}
-
-/// <summary>
 ///     Response model for expanded photo metadata.
 /// </summary>
 public sealed record PhotoThumbnailDto : PhotoDto
@@ -239,11 +228,6 @@ public sealed class CreatePhotoResponse
     /// Full metadata DTO
     /// </summary>
     public required PhotoMetaDataDto Metadata { get; init; }
-
-    /// <summary>
-    /// Blur DTO (contains blurhash)
-    /// </summary>
-    public required PhotoBlurDto Blur { get; init; }
 
     /// <summary>
     /// A temporary presigned URL for accessing the photo (valid for 5 minutes).

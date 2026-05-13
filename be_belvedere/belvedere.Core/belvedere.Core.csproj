@@ -11,13 +11,8 @@
         <PackageReference Include="OneOf" Version="3.0.271"/>
         <PackageReference Include="AWSSDK.S3" Version="4.0.23" />
         <PackageReference Include="MetadataExtractor" Version="2.9.3" />
+        <PackageReference Include="SkiaSharp" Version="4.147.0-preview.2.1" />
         <PackageReference Update="NodaTime" Version="3.3.2" />
-    </ItemGroup>
-
-    <ItemGroup>
-      <Reference Include="SixLabors.ImageSharp">
-        <HintPath>..\..\..\..\..\..\.nuget\packages\sixlabors.imagesharp\3.1.6\lib\net6.0\SixLabors.ImageSharp.dll</HintPath>
-      </Reference>
     </ItemGroup>
 
 </Project>

@@ -68,7 +68,6 @@ public sealed class DatabaseContext(DbContextOptions<DatabaseContext> options) :
         photo.Property(p => p.Description).HasMaxLength(2000);
         photo.Property(p => p.StorageKey).HasMaxLength(1024);
         photo.Property(p => p.ThumbKey).HasMaxLength(1024);
-        photo.Property(p => p.BlurHash).HasMaxLength(255);
         photo.Property(p => p.MimeType).HasMaxLength(255);
         photo.Property(p => p.Make).HasMaxLength(255);
         photo.Property(p => p.Model).HasMaxLength(255);

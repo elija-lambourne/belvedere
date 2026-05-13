@@ -16,8 +16,6 @@ public sealed class Photo
     [MaxLength(1024)]
     public required string ThumbKey { get; set; }
     [MaxLength(255)]
-    public required string BlurHash { get; set; }
-    [MaxLength(255)]
     public required string MimeType { get; set; }
     public int Width { get; set; }
     public int Height { get; set; }

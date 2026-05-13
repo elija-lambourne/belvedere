@@ -80,7 +80,7 @@ public sealed class AlbumController(
 
         return Ok(response);
     }
-
+/*
     /// <summary>
     ///     Retrieves a specific album with all its photos.
     /// </summary>
@@ -155,7 +155,7 @@ public sealed class AlbumController(
 
         return Ok(response);
     }
-
+*/
     /// <summary>
     ///     Retrieves a specific album with all its photo thumbnails (including presigned URLs).
     /// </summary>
@@ -247,6 +247,7 @@ public sealed class AlbumController(
         return Ok(response);
     }
 
+
     /// <summary>
     ///     Creates a new album for the authenticated user.
     /// </summary>
@@ -309,7 +310,7 @@ public sealed class AlbumController(
             PhotoCount = 0
         };
 
-        return CreatedAtAction(nameof(PreloadAlbum), new { id = createdAlbum.Id }, response);
+        return CreatedAtAction(nameof(GetAlbumThumbnails), new { id = createdAlbum.Id }, response);
     }
 
     /// <summary>

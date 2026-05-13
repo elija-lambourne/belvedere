@@ -8,8 +8,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using OneOf;
 using OneOf.Types;
-using SixLabors.ImageSharp;
-using SixLabors.ImageSharp.Processing;
+using SkiaSharp;
 
 namespace belvedere.Controllers;
 
@@ -310,24 +309,35 @@ public sealed class PhotoController(
         // 3. Upload original and extract metadata
         var origMeta = await storageService.SaveFileAsync(originalFormFile, request.Title, request.Description);
 
-        // 4. Generate thumbnail and blurhash
-        using var image = SixLabors.ImageSharp.Image.Load<SixLabors.ImageSharp.PixelFormats.Rgba32>(originalBytes);
-        int thumbMax = 400;
-        var resizeOptions = new SixLabors.ImageSharp.Processing.ResizeOptions
+        // 4. Generate thumbnail and blurhash using SkiaSharp so the container only needs Linux native assets
+        using var sourceBitmap = SKBitmap.Decode(originalBytes);
+        if (sourceBitmap is null)
         {
-            Mode = SixLabors.ImageSharp.Processing.ResizeMode.Max,
-            Size = new SixLabors.ImageSharp.Size(thumbMax, thumbMax)
-        };
-        image.Mutate(x => x.Resize(resizeOptions));
+            return StatusCode(StatusCodes.Status415UnsupportedMediaType);
+        }
 
-        // Compute blurhash from the resized image
-        string blurhash = BlurhashEncoder.Encode(image, 4, 3);
+        const int ThumbMax = 400;
+        float scale = Math.Min((float) ThumbMax / sourceBitmap.Width, (float) ThumbMax / sourceBitmap.Height);
+        scale = Math.Min(scale, 1f);
+
+        int thumbWidth = Math.Max(1, (int) Math.Round(sourceBitmap.Width * scale));
+        int thumbHeight = Math.Max(1, (int) Math.Round(sourceBitmap.Height * scale));
+
+        using var thumbnailBitmap = new SKBitmap(new SKImageInfo(thumbWidth, thumbHeight, SKColorType.Rgba8888, SKAlphaType.Premul));
+        using var canvas = new SKCanvas(thumbnailBitmap);
+        using var paint = new SKPaint
+        {
+            IsAntialias = true
+        };
+        using var image = SKImage.FromBitmap(thumbnailBitmap);
+        canvas.Clear(SKColors.Transparent);
+        canvas.DrawImage(image, new SKRect(0,0,thumbWidth, thumbHeight),new SKSamplingOptions(SKCubicResampler.Mitchell),paint);
+        canvas.Flush();
 
         // Encode thumbnail to JPEG
-        await using var thumbStream = new MemoryStream();
-        var encoder = new SixLabors.ImageSharp.Formats.Jpeg.JpegEncoder { Quality = 75 };
-        await image.SaveAsJpegAsync(thumbStream, encoder);
-        byte[] thumbBytes = thumbStream.ToArray();
+        using var thumbnailImage = SKImage.FromBitmap(thumbnailBitmap);
+        using SKData thumbData = thumbnailImage.Encode(SKEncodedImageFormat.Jpeg, 75);
+        byte[] thumbBytes = thumbData.ToArray();
 
         // 5. Upload thumbnail bytes
         var thumbMeta = await storageService.SaveBytesAsync(thumbBytes, "thumb_" + request.File.FileName, "image/jpeg", null, null);
@@ -342,7 +352,6 @@ public sealed class PhotoController(
             Description = request.Description,
             StorageKey = origMeta.StorageKey,
             ThumbKey = thumbMeta.StorageKey,
-            BlurHash = blurhash,
             MimeType = origMeta.MimeType,
             Width = origMeta.Width,
             Height = origMeta.Height,
@@ -401,25 +410,11 @@ public sealed class PhotoController(
 
         var metadataDto = MapPhotoToMetadata(photoEntity);
 
-        var blurDto = new PhotoBlurDto
-        {
-            Id = photoEntity.Id,
-            Title = photoEntity.Title,
-            FileName = photoEntity.FileName,
-            Description = photoEntity.Description,
-            Width = photoEntity.Width,
-            Height = photoEntity.Height,
-            MimeType = photoEntity.MimeType,
-            CreatedAt = photoEntity.CreatedAt,
-            BlurHash = photoEntity.BlurHash
-        };
-
         var createResponse = new CreatePhotoResponse
         {
             Photo = photoDto,
             Thumbnail = thumbnailDto,
             Metadata = metadataDto,
-            Blur = blurDto,
             TemporaryUrl = temporaryUrl
         };
 

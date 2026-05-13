@@ -68,17 +68,6 @@ public record AlbumDto
 }
 
 /// <summary>
-///     Response model for album with full photo details.
-/// </summary>
-public sealed record AlbumExtendedDto : AlbumDto
-{
-    /// <summary>
-    ///     The photos in the album.
-    /// </summary>
-    public required List<PhotoBlurDto> Photos { get; init; }
-}
-
-/// <summary>
 ///     Response model for album with thumbnail photo details.
 /// </summary>
 public sealed record AlbumThumbnailDto : AlbumDto
