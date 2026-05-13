@@ -8,6 +8,23 @@ This folder contains the ASP.NET Core backend and a Docker Compose setup for loc
 docker compose up --build
 ```
 
+## Run for active development (only required when modifying code)
+The docker services can be run separately from the backend, therefore enabling in-IDE running of the backend and debugging.
+It is recommended to run these services in this order and opening a new terminal for each for observability.
+
+```bash
+docker compose up postgres
+```
+after it finished setting up also run the migrations service
+```bash
+docker compose up migrations
+```
+Now you can run garage for the S3 service:
+
+```bash
+docker compose up garage garage-ui
+```
+
 The stack starts:
 
 - `postgres` on the port configured in `.env` (`5432` by default)
