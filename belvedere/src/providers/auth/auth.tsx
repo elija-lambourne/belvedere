@@ -5,7 +5,10 @@ import { useLocation, useNavigate } from "react-router-dom"
 import { isUnauthorizedError } from "@/lib/axios.ts"
 import { AuthContext } from "./auth-context"
 import type { AuthContextValue } from "./auth-context"
-import { fetchCsrfToken, fetchCurrentUser } from "@/features/auth"
+import {
+  fetchCsrfToken,
+  fetchCurrentUser,
+} from "@/providers/auth/authRequests.ts"
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const navigate = useNavigate()

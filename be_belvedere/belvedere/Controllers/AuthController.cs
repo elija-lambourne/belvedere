@@ -29,9 +29,13 @@ public class AuthController(IAntiforgery antiforgery) : ControllerBase
     [HttpGet("login")]
     [AllowAnonymous]
     [ProducesResponseType(StatusCodes.Status302Found)]
-    public IActionResult Login([FromQuery] string? returnUrl = "/")
+    public IActionResult Login([FromQuery] string? returnUrl = null)
     {
-        var props = new AuthenticationProperties { RedirectUri = returnUrl };
+        // Default to your frontend URL. In production, ensure you validate 
+        // this returnUrl to prevent Open Redirect attacks.
+        var finalRedirect = string.IsNullOrEmpty(returnUrl) ? "http://localhost:5173/" : returnUrl;
+        
+        var props = new AuthenticationProperties { RedirectUri = finalRedirect };
         return Challenge(props, OpenIdConnectDefaults.AuthenticationScheme);
     }
 
@@ -54,9 +58,11 @@ public class AuthController(IAntiforgery antiforgery) : ControllerBase
     [Authorize]
     [ProducesResponseType(StatusCodes.Status302Found)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
-    public IActionResult Logout([FromQuery] string? returnUrl = "/")
+    public IActionResult Logout([FromQuery] string? returnUrl = null)
     {
-        var props = new AuthenticationProperties { RedirectUri = returnUrl };
+        var finalRedirect = string.IsNullOrEmpty(returnUrl) ? "http://localhost:5173/" : returnUrl;
+        
+        var props = new AuthenticationProperties { RedirectUri = finalRedirect };
         return SignOut(props, CookieAuthenticationDefaults.AuthenticationScheme, OpenIdConnectDefaults.AuthenticationScheme);
     }
 

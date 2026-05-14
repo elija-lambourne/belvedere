@@ -13,7 +13,7 @@ builder.AddLogging();
 builder.Services.AddApplicationServices(configurationManager, isDev);
 builder.Services.AddOpenApi();
 builder.Services.AddCors(settings);
-builder.Services.AddControllers(o => 
+builder.Services.AddControllersWithViews(o => 
        { 
            o.ModelBinderProviders.Insert(0, new NodaTimeModelBinderProvider()); 
            // Globally require CSRF tokens for all state-changing requests (POST, PUT, DELETE, PATCH)
@@ -28,13 +28,13 @@ builder.Services.AddAntiforgery(options =>
     options.HeaderName = "X-XSRF-TOKEN";
     // We enforce SameSite=Strict for BFF to prevent CSRF.
     options.Cookie.SameSite = Microsoft.AspNetCore.Http.SameSiteMode.Strict;
-    options.Cookie.SecurePolicy = CookieSecurePolicy.Always;
+    options.Cookie.SecurePolicy = isDev ? CookieSecurePolicy.SameAsRequest : CookieSecurePolicy.Always;
 });
 
 builder.Services.AddAuthentication(options =>
        {
            options.DefaultScheme = "Cookies";
-           options.DefaultChallengeScheme = "oidc";
+           options.DefaultChallengeScheme = "OpenIdConnect";
        })
        .AddCookie("Cookies", options =>
        {
@@ -50,7 +50,7 @@ builder.Services.AddAuthentication(options =>
                options.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest;
            }
        })
-       .AddOpenIdConnect("oidc", options =>
+       .AddOpenIdConnect("OpenIdConnect", options =>
        {
            options.Authority = GetRequiredConfigurationValue(builder.Configuration, "Keycloak:Authority");
            options.ClientId = GetRequiredConfigurationValue(builder.Configuration, "Keycloak:ClientId");

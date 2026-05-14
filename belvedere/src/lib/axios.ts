@@ -1,7 +1,8 @@
 import axios from "axios"
 import type { AxiosInstance } from "axios"
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "/api"
+const API_BASE_URL =
+  import.meta.env.VITE_APP_API_URL ?? "/api"
 const CSRF_COOKIE_NAMES = ["XSRF-TOKEN", "CSRF-TOKEN"]
 const CSRF_HEADER_NAME = "X-XSRF-TOKEN"
 const SAFE_METHODS = new Set(["get", "head", "options", "trace"])
@@ -130,6 +131,7 @@ export const apiWithCsrf = {
     return makeChain(path)
   },
 }
+
 
 export function isUnauthorizedError(error: unknown): boolean {
   return getStatusFromError(error) === 401
