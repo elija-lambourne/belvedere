@@ -27,6 +27,7 @@ public sealed class Photo
     [MaxLength(255)]
     public string? Model { get; set; }
     public double? ExposureTime { get; set; }
+    public double? FocalLength { get; init; }
     public double? FNumber { get; set; }
     public int? Iso { get; set; }
     public double? Latitude { get; set; }

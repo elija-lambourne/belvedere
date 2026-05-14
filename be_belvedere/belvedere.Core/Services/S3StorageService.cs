@@ -7,6 +7,7 @@ using Amazon.S3;
 using Amazon.S3.Model;
 using MetadataExtractor;
 using MetadataExtractor.Formats.Exif;
+using MetadataExtractor.Formats.Exif.Makernotes;
 using MetadataExtractor.Formats.Jpeg;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Options;
@@ -55,6 +56,7 @@ public interface IStorageService
         string? Model,
         double? ExposureTime,
         double? FNumber,
+        double? FocalLength,
         int? Iso,
         double? Latitude,
         double? Longitude,
@@ -223,6 +225,7 @@ internal sealed class S3StorageService : IStorageService
                 ExposureTime: extracted.ExposureTime,
                 FNumber: extracted.FNumber,
                 Iso: extracted.Iso,
+                FocalLength: extracted.FocalLength,
                 Latitude: extracted.Latitude,
                 Longitude: extracted.Longitude,
                 IsLivePhoto: false);
@@ -236,8 +239,12 @@ internal sealed class S3StorageService : IStorageService
 
     public async ValueTask<IStorageService.FileMetadata> SaveBytesAsync(byte[] data, string fileName, string contentType, string? title, string? description)
     {
-        if (data is null) throw new ArgumentNullException(nameof(data));
-        if (string.IsNullOrWhiteSpace(fileName)) throw new ArgumentException("fileName is required", nameof(fileName));
+        ArgumentNullException.ThrowIfNull(data);
+
+        if (string.IsNullOrWhiteSpace(fileName))
+        {
+            throw new ArgumentException("fileName is required", nameof(fileName));
+        }
 
         string bucketName = _settings.BucketName ?? throw new InvalidOperationException("Storage:BucketName must be configured");
 
@@ -255,8 +262,15 @@ internal sealed class S3StorageService : IStorageService
                 ContentType = contentType
             };
 
-            if (!string.IsNullOrWhiteSpace(title)) putRequest.Metadata["title"] = title;
-            if (!string.IsNullOrWhiteSpace(description)) putRequest.Metadata["description"] = description;
+            if (!string.IsNullOrWhiteSpace(title))
+            {
+                putRequest.Metadata["title"] = title;
+            }
+
+            if (!string.IsNullOrWhiteSpace(description))
+            {
+                putRequest.Metadata["description"] = description;
+            }
 
             await _s3Client.PutObjectAsync(putRequest);
             _logger.LogInformation("Bytes uploaded successfully to S3. StorageKey: {StorageKey}, Size: {FileSize}", storageKey, data.Length);
@@ -274,6 +288,7 @@ internal sealed class S3StorageService : IStorageService
                 Model: null,
                 ExposureTime: null,
                 FNumber: null,
+                FocalLength: null,
                 Iso: null,
                 Latitude: null,
                 Longitude: null,
@@ -330,6 +345,7 @@ internal sealed class S3StorageService : IStorageService
             ExposureTime: TryGetRational(subIfd, ExifDirectoryBase.TagExposureTime),
             FNumber: TryGetRational(subIfd, ExifDirectoryBase.TagFNumber),
             Iso: TryGetInt(subIfd, ExifDirectoryBase.TagIsoEquivalent),
+            FocalLength: TryGetInt(subIfd,ExifDirectoryBase.TagFocalLength),
             Latitude: latitude,
             Longitude: longitude);
     }
@@ -372,6 +388,7 @@ internal sealed class S3StorageService : IStorageService
         string? Model,
         double? ExposureTime,
         double? FNumber,
+        double? FocalLength,
         int? Iso,
         double? Latitude,
         double? Longitude);

@@ -88,6 +88,8 @@ public sealed record PhotoThumbnailDto : PhotoDto
     ///     Exposure time in seconds.
     /// </summary>
     public double? ExposureTime { get; init; }
+    
+    public double? FocalLength { get; init; }
 
     /// <summary>
     ///     F-number of the photo.
@@ -161,6 +163,8 @@ public sealed record PhotoMetaDataDto : PhotoDto
     ///     F-number of the photo.
     /// </summary>
     public double? FNumber { get; init; }
+    
+    public double? FocalLength { get; init; }
 
     /// <summary>
     ///     ISO sensitivity value.
