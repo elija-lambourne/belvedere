@@ -6,12 +6,10 @@
 
 import { apiWithCsrf } from "@/lib/axios"
 import {
-  albumExtendedSchema,
   albumListSchema,
   albumSchema,
   albumWithThumbnailsSchema,
   type Album,
-  type AlbumExtended,
   type AlbumWithThumbnails,
 } from "@/types"
 import z from "zod"
@@ -39,7 +37,7 @@ export async function getAlbumPreload(
   albumId: string,
   shareKey?: string,
   sharePassword?: string
-): Promise<AlbumExtended> {
+): Promise<AlbumWithThumbnails> {
   let req = apiWithCsrf.url(`/albums/${albumId}/preload`)
 
   if (shareKey) {
@@ -47,7 +45,7 @@ export async function getAlbumPreload(
   }
 
   const data = await req.get().json<unknown>()
-  return albumExtendedSchema.parse(data)
+  return albumWithThumbnailsSchema.parse(data)
 }
 
 /**

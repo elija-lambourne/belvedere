@@ -1,29 +1,22 @@
 import { Button } from "@/components/ui/button"
+import { Field } from "@/components/ui/field.tsx"
+import { Input } from "@/components/ui/input.tsx"
+import { Masonry } from "@/components/ui/masonry.tsx"
 
-import { PhotoViewer } from "./PhotoViewer"
+import { AddPhotoDialog } from "@/features/photos/components/AddPhotoDialog.tsx"
 
 export function PhotosDashboard() {
   return (
     <main className="space-y-6 p-6">
-      <section className="space-y-2">
-        <p className="text-sm text-muted-foreground">Photos</p>
-        <h1 className="text-3xl font-semibold tracking-tight">Encrypted media vault</h1>
-        <p className="max-w-2xl text-sm text-muted-foreground">
-          Media should flow through the BFF, use signed URLs, and never rely on direct public paths.
-        </p>
-      </section>
+      <div className="flex items-center justify-between gap-9 md:gap-x-24 lg:gap-x-48">
+        <Field orientation="horizontal">
+          <Input type="search" placeholder="Search..." />
+          <Button>Search</Button>
+        </Field>
 
-      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
-        <PhotoViewer photoId="placeholder-photo" alt="Sample vault media" />
-        <aside className="space-y-3 rounded-lg border bg-card p-4 text-card-foreground shadow-sm">
-          <h2 className="font-medium">Actions</h2>
-          <p className="text-sm text-muted-foreground">Wire your upload and delete flows to authenticated API endpoints.</p>
-          <Button variant="outline" className="w-full">
-            Refresh vault
-          </Button>
-        </aside>
+        <AddPhotoDialog/>
       </div>
+      <Masonry photos={[]} />
     </main>
   )
 }
-

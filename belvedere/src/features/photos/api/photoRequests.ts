@@ -9,11 +9,10 @@ import {
   type CreatePhotoRequest,
   createPhotoResponse,
   type CreatePhotoResponse,
-  type PhotoMetadata,
-  photoMetadataSchema,
   photoSignedUrlResponse,
   type PhotoSignedUrlResponse,
 } from "@/features/photos"
+import { type PhotoMetadata, photoMetadataSchema } from "@/types"
 
 /**
  * Get comprehensive metadata for a photo including EXIF data
