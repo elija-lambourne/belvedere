@@ -18,8 +18,8 @@ import {
 import { Label } from "@/components/ui/label.tsx"
 import { Input } from "@/components/ui/input.tsx"
 import { Textarea } from "@/components/ui/textarea.tsx"
-import { Dropzone } from "@/components/ui/dropzone.tsx"
 import { MultiImages } from "@/components/ui/MultiImages.tsx"
+import { SingleFile } from "@/components/ui/SingleFile.tsx"
 
 export function AddPhotoDialog() {
   return (
@@ -42,24 +42,25 @@ export function AddPhotoDialog() {
             <TabsTrigger value="single">Single</TabsTrigger>
           </TabsList>
           <TabsContent value="multiple" className="mt-4">
-            <div className="flex h-48 items-center justify-center rounded-md border-2 border-dashed">
-              <MultiImages/>
-            </div>
+            <MultiImages
+              onDropFile={function (file: File): void {
+                console.log(file);
+                throw new Error("Function not implemented.")
+              }}
+              acceptedTypes={[".png", ".jpg", ".jpeg"]}
+              maxSize={100 * 1024 * 1024}
+              maxFiles={100}
+            />
           </TabsContent>
           <TabsContent value="single" className="mt-4 space-y-4">
-            <div className="flex h-48 items-center justify-center rounded-md border-2 border-dashed">
-              <p>Upload Drop Area</p>
-            </div>
+            <SingleFile />
             <div className="space-y-2">
               <Label htmlFor="title">Title</Label>
               <Input id="title" placeholder="Enter a title" />
             </div>
             <div className="space-y-2">
               <Label htmlFor="description">Description</Label>
-              <Textarea
-                id="description"
-                placeholder="Enter a description"
-              />
+              <Textarea id="description" placeholder="Enter a description" />
             </div>
           </TabsContent>
         </Tabs>

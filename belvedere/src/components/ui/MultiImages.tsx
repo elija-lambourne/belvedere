@@ -13,7 +13,14 @@ import {
 import { UploadIcon } from "@/components/ui/icons/UploadIcon.tsx"
 import { DeleteIcon } from "@/components/ui/icons/DeleteIcon.tsx"
 
-export function MultiImages() {
+type MultiImagesProps = {
+  onDropFile: (file: File) => void,
+  acceptedTypes: string[],
+  maxSize: number,
+  maxFiles: number
+}
+
+export function MultiImages(props: MultiImagesProps) {
   const dropzone = useDropzone({
     onDropFile: async (file: File) => {
       await new Promise((resolve) => setTimeout(resolve, 1000))
@@ -23,11 +30,9 @@ export function MultiImages() {
       }
     },
     validation: {
-      accept: {
-        "image/*": [".png", ".jpg", ".jpeg"],
-      },
-      maxSize: 10 * 1024 * 1024,
-      maxFiles: 10,
+      accept: {"image/*": props.acceptedTypes},
+      maxSize: props.maxSize,
+      maxFiles: props.maxFiles,
     },
   })
 
@@ -37,7 +42,7 @@ export function MultiImages() {
         <div>
           <div className="flex justify-between">
             <DropzoneDescription>
-              Please select up to 10 images
+              Please select up to {props.maxFiles} images
             </DropzoneDescription>
             <DropzoneMessage />
           </div>
