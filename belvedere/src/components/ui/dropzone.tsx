@@ -1,5 +1,5 @@
 import { cn } from "@/lib/utils";
-import React, {
+import {
   createContext,
   forwardRef,
   useCallback,
@@ -15,7 +15,7 @@ import {
   useDropzone as rootUseDropzone,
 } from "react-dropzone"
 import { Button, buttonVariants } from "@/components/ui/button"
-import type { VariantProps } from "class-variance-authority";
+import type { VariantProps } from "class-variance-authority"
 
 type DropzoneResult<TUploadRes, TUploadError> =
   | {
@@ -242,40 +242,38 @@ const useDropzone = <TUploadRes, TUploadError = string>(
   }, [fileStatuses, rootError]);
 
   const _uploadFile = useCallback(
-    (file: File, id: string) => {
-      const upload = async (tries = 0): Promise<void> => {
-        const result = await pOnDropFile(file);
+    async (file: File, id: string, tries = 0) => {
+      const result = await pOnDropFile(file);
 
-        if (result.status === "error") {
-          if (autoRetry === true && tries < (maxRetryCount ?? Infinity)) {
-            dispatch({ type: "update-status", id, status: "pending" });
-            return upload(tries + 1);
-          }
+      if (result.status === "error") {
+        if (autoRetry === true && tries < (maxRetryCount ?? Infinity)) {
+          dispatch({ type: "update-status", id, status: "pending" });
+          // eslint-disable-next-line react-hooks/immutability
+          return _uploadFile(file, id, tries + 1);
+        }
 
-          dispatch({
-            type: "update-status",
-            id,
-            status: "error",
-            error:
-              pShapeUploadError !== undefined
-                ? pShapeUploadError(result.error)
-                : result.error,
-          });
-          if (pOnFileUploadError !== undefined) {
-            pOnFileUploadError(result.error);
-          }
-          return;
-        }
-        if (pOnFileUploaded !== undefined) {
-          pOnFileUploaded(result.result);
-        }
         dispatch({
           type: "update-status",
           id,
-          ...result,
+          status: "error",
+          error:
+            pShapeUploadError !== undefined
+              ? pShapeUploadError(result.error)
+              : result.error,
         });
-      };
-      return upload();
+        if (pOnFileUploadError !== undefined) {
+          pOnFileUploadError(result.error);
+        }
+        return;
+      }
+      if (pOnFileUploaded !== undefined) {
+        pOnFileUploaded(result.result);
+      }
+      dispatch({
+        type: "update-status",
+        id,
+        ...result,
+      });
     },
     [
       autoRetry,
@@ -439,6 +437,7 @@ const DropZoneArea = forwardRef<HTMLDivElement, DropZoneAreaProps>(
 
     return (
       // A11y behavior is handled through Trigger. All of these are only relevant to drag and drop which means this should be fine?
+      // eslint-disable-next-line jsx-a11y/no-static-element-interactions
       <div
         ref={(instance) => {
           // TODO: test if this actually works?
@@ -828,6 +827,5 @@ export {
   DropzoneRetryFile,
   DropzoneTrigger,
   InfiniteProgress,
-  // eslint-disable-next-line react-refresh/only-export-components
   useDropzone,
 };
