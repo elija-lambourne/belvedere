@@ -19,6 +19,7 @@ import { Label } from "@/components/ui/label.tsx"
 import { Input } from "@/components/ui/input.tsx"
 import { Textarea } from "@/components/ui/textarea.tsx"
 import { Dropzone } from "@/components/ui/dropzone.tsx"
+import { MultiImages } from "@/components/ui/MultiImages.tsx"
 
 export function AddPhotoDialog() {
   return (

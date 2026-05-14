@@ -1,5 +1,4 @@
 "use client"
-import { CloudUploadIcon, Trash2Icon } from "lucide-react"
 import {
   Dropzone,
   DropZoneArea,
@@ -11,10 +10,8 @@ import {
   DropzoneTrigger,
   useDropzone,
 } from "@/components/ui/dropzone.tsx"
-
-function DropZoneArea(props: { children: ReactNode }) {
-  return null
-}
+import { UploadIcon } from "@/components/ui/icons/UploadIcon.tsx"
+import { DeleteIcon } from "@/components/ui/icons/DeleteIcon.tsx"
 
 export function MultiImages() {
   const dropzone = useDropzone({
@@ -46,7 +43,7 @@ export function MultiImages() {
           </div>
           <DropZoneArea>
             <DropzoneTrigger className="flex flex-col items-center gap-4 bg-transparent p-10 text-center text-sm">
-              <CloudUploadIcon className="size-8" />
+              <UploadIcon className="size-8" />
               <div>
                 <p className="font-semibold">Upload listing images</p>
                 <p className="text-sm text-muted-foreground">
@@ -68,7 +65,6 @@ export function MultiImages() {
                 <div className="aspect-video animate-pulse bg-black/20" />
               )}
               {file.status === "success" && (
-                // eslint-disable-next-line @next/next/no-img-element
                 <img
                   src={file.result}
                   alt={`uploaded-${file.fileName}`}
@@ -86,7 +82,7 @@ export function MultiImages() {
                   variant="ghost"
                   className="shrink-0 hover:outline"
                 >
-                  <Trash2Icon className="size-4" />
+                  <DeleteIcon className="size-4" />
                 </DropzoneRemoveFile>
               </div>
             </DropzoneFileListItem>
